@@ -34,7 +34,9 @@
 <body>
 <div class="wrap">
   <h1><b>VIGIL</b> · the agent for the hours humans sleep</h1>
-  <div class="sub">LLM-autonomous overnight <b>cross-asset execution</b> agent — tokenized US stocks (rToken) + crypto on Bitget · Agentic Trading · <span id="win">…</span></div>
+  <div class="sub">LLM-autonomous overnight <b>cross-asset execution</b> agent — tokenized US stocks (rToken) + crypto on Bitget · Agentic Trading · <span id="win">…</span>
+    <button id="kill" style="float:right;background:#1f2b3a;color:var(--gold);border:1px solid var(--line);border-radius:8px;padding:4px 12px;cursor:pointer">ARM KILL-SWITCH</button>
+  </div>
 
   <div class="grid" id="kpis"></div>
 
@@ -52,6 +54,7 @@
 const $=s=>document.querySelector(s); const U=n=>n? '$'+n.toLocaleString(undefined,{maximumFractionDigits:2}):'—';
 const MIME={};
 function wire(){
+  fetch('/api/metrics').then(r=>r.json()).then(m=>{window.__m=m;}).catch(()=>{});
   fetch('/api/state').then(r=>r.json()).then(render).catch(()=>{});
   fetch('/api/decisions').then(r=>r.json()).then(d=>{
     if(!d.decisions) return; const rows=d.decisions.map(x=>`
@@ -63,13 +66,22 @@ function render(s){
   $('#win').textContent = s.executionMode==='paper'?'paper trading · '+(s.window==='night'?'night watch':s.window+' watch'):s.executionMode;
   $('#mode').textContent=s.executionMode; $('#llm').textContent='qwen3.8-max (stub seam active)';
   $('#window-pill').textContent='window: '+s.window;
-  $('#kpis').innerHTML=[
+  const K=[
     ['NAV', U(s.nav)],
-    ['Seed', U(s.seed)],
+    ['Cash', U(s.cash)],
     ['Drawdown', (s.drawdown*100).toFixed(2)+'%', s.drawdown>0.05?'lose':'win'],
-    ['Agent', s.agent.status],
+    ['Realized P&L', (s.agent.realizedPnlUsd>=0?'+':'')+U(Math.abs(s.agent.realizedPnlUsd))],
+    ['Agent', s.agent.killed?'KILLED':s.agent.status],
     ['Decisions', s.decisions? s.decisions.length : 0],
-  ].map(([l,v,c])=>`<div class="card"><div class="lab">${l}</div><div class="val ${c||''}">${v}</div></div>`).join('');
+  ];
+  if (window.__m){
+    const m=window.__m;
+    K.splice(3,0,
+      ['Sharpe', m.sharpe==null?'—':m.sharpe.toFixed(2)],
+      ['Max DD', (m.maxDrawdown*100).toFixed(2)+'%'],
+      ['Win rate', m.winRate==null?'—':(m.winRate*100).toFixed(0)+'%']);
+  }
+  $('#kpis').innerHTML=K.map(([l,v,c])=>`<div class="card"><div class="lab">${l}</div><div class="val ${c||''}">${v}</div></div>`).join('');
   const hs=(s.holdings||[]).map(h=>
     `<tr><td>${h.key}<br><span style="color:var(--mut)">qty ${Number(h.qty)/1e6}</span></td><td>${h.priceUsd!=null?U(h.priceUsd):'—'}</td><td>${U(h.valueUsd)}</td><td class="${h.chg24>0?'pos':'neg'}">${(h.chg24*100).toFixed(2)}%</td><td>${(h.weight*100).toFixed(1)}%</td></tr>`).join('');
   $('#holdings').innerHTML=`<tr><th>asset</th><th>price</th><th>value</th><th>24h</th><th>wt</th></tr>`+hs;
@@ -77,7 +89,11 @@ function render(s){
   $('#bars').innerHTML=(s.holdings||[]).map(h=>`<div class="bar" style="height:${Math.max(2,((h.valueUsd||0)/max)*100)}%" title="${h.key} ${U(h.valueUsd)}">${((h.valueUsd||0)/s.nav*100).toFixed(0)}</div>`).join('');
 }
 setInterval(wire,5000);
-fetch('/api/agent/stream').then(r=>{ if(r.ok){ setInterval(()=>{},15000); } }).catch(()=>{});
+document.getElementById('kill').addEventListener('click', async (e)=>{
+  const btn=e.target; const on = !btn.dataset.on || btn.dataset.on==='0';
+  const r = await fetch('/api/kill',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on})}).then(x=>x.json()).catch(()=>null);
+  if(r){ btn.dataset.on = on?'1':'0'; btn.textContent = on?'KILL-SWITCH ON':'ARM KILL-SWITCH'; }
+});
 wire();
 </script>
 </body>

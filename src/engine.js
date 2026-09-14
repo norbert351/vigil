@@ -35,9 +35,9 @@ export function portfolioState(positions, prices) {
   return { total, cash: 0n, detail };
 }
 
-export function signManifest({ window, nonce, ts, navMicro, trigger, prices, orders, model, llm }) {
+export function signManifest({ window, nonce, ts, navMicro, trigger, prices, orders, model, llm, context }) {
   const rep = (_k, v) => (typeof v === "bigint" ? v.toString() : v);
-  const ser = JSON.stringify({ v: 2, window, nonce, ts, navMicro: navMicro.toString(), trigger, prices, orders, model, llm }, rep);
+  const ser = JSON.stringify({ v: 3, window, nonce, ts, navMicro: navMicro.toString(), trigger, prices, orders, context: context ?? null, model, llm }, rep);
   const digest = createHash("sha256").update(ser).digest("hex");
   return { hash: digest, sentinel: `VIGIL-${digest.slice(0, 12)}`, ser };
 }

@@ -85,11 +85,23 @@ export const UNIVERSE = [
   { key: "eth",   name: "Ethereum",      crypto: "ETHUSDT", asset: "crypto" },
 ];
 
-export function universeKey(bitgetSym) { // 'TSLA' -> 'rtsla'
-  const u = UNIVERSE.find((x) => x.bitget === bitgetSym);
-  return u ? u.key : null;
-}
-export function isCrypto(key) { const u = UNIVERSE.find((x) => x.key === key); return !!u?.crypto; }
+// ---- execution economics (honest paper performance: brief demands fee + slippage cost) ----
+export const FEE_BPS = Number(process.env.VIGIL_FEE_BPS || 10);         // taker fee 10bp each side
+export const SLIPPAGE_BPS = Number(process.env.VIGIL_SLIPPAGE_BPS || 2);// 2bp market-slippage each side
 
+// ---- night-mode ("hours humans sleep"): tighten risk + bias to defense after hours ----
+export const NIGHT_DD_CAP = Number(process.env.VIGIL_NIGHT_DD || 0.05); // effective breaker 5% at night
+export const NIGHT_MAX_GROSS = Number(process.env.VIGIL_NIGHT_GROSS || 0.70); // cap gross exposure at night
+
+// ---- cross-asset regime (Fear & Greed → risk-on/off) ----
+export const REGIME_FEAR = Number(process.env.VIGIL_REGIME_FEAR || 35); // F&G < 35 → defensive tilt
+export const REGIME_GREED = Number(process.env.VIGIL_REGIME_GREED || 70);// F&G > 70 → risk-on tilt
+export const DEFENSIVE_KEYS = ["rspy", "rqqq"];                          // defensive index base to rotate into
+
+// ---- derived ----
+export const isCrypto = (key) => (UNIVERSE.find((x) => x.key === key))?.crypto ? true : false;
+export const isDefensive = (key) => DEFENSIVE_KEYS.includes(key);
+
+// ---- misc ----
 export function cryptoKeys() { return UNIVERSE.filter((x) => x.crypto).map((x) => x.key); }
 export function equityKeys() { return UNIVERSE.filter((x) => !x.crypto).map((x) => x.key); }

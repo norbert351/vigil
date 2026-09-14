@@ -65,16 +65,42 @@ Env (all optional):
 | `VIGIL_LLM` | `stub` | `stub` \| `qwen` |
 | `VIGIL_QWEN_API_KEY` | — | Qwen key (enables `VIGIL_LLM=qwen`) |
 | `VIGIL_SCAN_MS` | 300000 | decision cadence |
-| `VIGIL_MAX_DD` | 0.10 | circuit-breaker drawdown |
+| `VIGIL_MAX_DD` | 0.10 | circuit-breaker drawdown (day) |
+| `VIGIL_NIGHT_DD` | 0.05 | circuit-breaker drawdown (night mode) |
+| `VIGIL_FEE_BPS` | 10 | taker fee (bps) |
+| `VIGIL_SLIPPAGE_BPS` | 2 | slippage (bps) |
+| `VIGIL_REGIME_FEAR` | 35 | Fear & Greed below → defensive tilt |
 
-Tests: `node --test` (9 specs — valuation, signed manifests, risk caps, breaker,
-no-oversell execution, decision log, stub policy).
+Tests: `node --test` (15 specs — valuation, signed manifests, night-mode breaker, kill-switch,
+Fear-regime rotation, cash-funded buys (no overdraft), fee/slippage, sell-proceeds rotation,
+equity-curve analytics, decision log, stub policy).
 
 ## Endpoints
 
-`GET /health` · `GET /api/state` · `GET /api/prices` · `GET /api/decisions` ·
-`GET /api/decision-log.csv` · `GET /api/universe` · `POST /api/run` ·
-`GET /api/agent/stream` (SSE) · `GET /` (dashboard).
+`GET /health` · `GET /api/state` · `GET /api/prices` · `GET /api/universe` ·
+`GET /api/metrics` (Sharpe/maxDD/win-rate/realized P&L) · `GET /api/equity` (NAV curve) ·
+`GET /api/decisions` · `GET /api/decision-log.csv` · `POST /api/run` ·
+`POST /api/kill {on:true|false}` (halt/resume) · `GET /api/agent/stream` (SSE) · `GET /`.
+
+## What's under the hood
+
+- **Cash ledger** — NAV = cash + positions; BUY is cash-funded (proceeds of same-batch SELLs
+  count), so the agent can never conjure money or overdraft.
+- **Execution economics** — 10bp taker fee + 2bp slippage on every fill; cost basis tracked
+  per position → realized P&L and win rate are computed from real fills.
+- **Cross-asset regime hedge** — Fear & Greed drives risk-on/off: in **Fear** (<35) the agent
+  trims crypto + high-beta and rotates into the defensive index base (SPY/QQQ); in **Greed**
+  (>70) it may add modestly to growth. SELLs are emitted before BUYs so rotation self-funds.
+- **Night-mode ("hours humans sleep")** — during the 22:00–06:00 window the circuit breaker
+  tightens to 5% (from 10%) and gross exposure is capped, biasing the book to defense while
+  nobody is watching.
+- **Event → decision traceability** — every decision binds the *context the agent saw*
+  (window, hour, NAV, cash, drawdown, Fear & Greed, top headlines, targets) into its signed
+  `VIGIL-<sha256>` manifest, so any decision is replayable and auditable.
+- **Equity curve + analytics** — each sweep logs NAV to `equity_curve`; `/api/metrics`
+  derives Sharpe, max drawdown, win rate and realized P&L (the quant half of the rubric).
+- **Circuit breaker · kill-switch (file or `POST /api/kill`) · per-order + single-asset +
+  aggregate crypto/rToken caps** — the always-on risk harness.
 
 ## Architecture
 
@@ -83,16 +109,19 @@ market.js (Bitget rToken+crypto)      perception.js (Bitget MCP + RSS + F&G)
         \                              /
          v                            v
         agent.js  — sense → LLM (llm.js) → risk.js gate → executor.js → sign (engine.js)
-         |                                                              |
-        db.js (node:sqlite ledger: positions · decisions · orders)      |
-         \__________________________ index.js (HTTP + SSE dashboard) __/
+         |            (night-mode + Fear-regime rotation; cash + fee/slippage settlement)
+         |
+        db.js (node:sqlite: positions+cost basis · cash · realized P&L · decisions+context · equity_curve)
+         \____________________ analytics.js → index.js (HTTP + SSE dashboard + /api/metrics) ____/
 ```
 
 ## Honest status
 
 - **Verified**: live rToken + crypto prices (12-symbol universe resolves on Bitget),
-  end-to-end loop, 9/9 tests, signed decision log, live perception (news + Fear&Greed),
-  dashboard + CSV export.
+  end-to-end loop, **15/15 tests**, cash-correct paper ledger (NAV = cash + positions, no
+  overdraft), fees + slippage applied, signed decision log with bound context, live
+  perception (news + Fear & Greed), night-mode + Fear-regime rotation, equity curve with
+  Sharpe/max-DD/win-rate analytics, dashboard + CSV export.
 - **Paper by design**: execution is `simulated` at the live market price. Live rToken
   settlement requires the Bitget Agentic account + API credentials.
 - **LLM seam**: Qwen is wired (`llm.js`) but the API key is provisioned via Bitget KYC;

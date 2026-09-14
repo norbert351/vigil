@@ -1,57 +1,88 @@
 // VIGIL — paper executor. Routes the decision's orders into the SQLite ledger at the
-// live market price. EXECUTION_MODE=paper (default; no Bitget creds needed, honest
-// label on every artifact). A Bitget UTA v3 demo execution is wired behind the same
-// seam (EXECUTION_MODE=bitget) so the identical decision logic can later go live.
-import { setPosition, clearPositions, getPositions, setAgentState, saveSnapshot } from "./db.js";
+// live market price, with a real CASH ledger + fee + slippage + cost basis + realized P&L
+// so paper performance is honest (the brief demands fee & slippage costs). BUY cannot
+// conjure money: every buy is cash-funded (using proceeds of sells in the same batch).
+// EXECUTION_MODE=bitget routes the identical logic behind the same seam via the UTA v3 demo.
+import { getPositions, setPosition, getCash, setCash, addRealized } from "./db.js";
 import { signManifest, decisionId } from "./engine.js";
-import { EXECUTION_MODE, QTY_SCALE } from "./config.js";
+import { EXECUTION_MODE, QTY_SCALE, FEE_BPS, SLIPPAGE_BPS } from "./config.js";
 
-// Apply orders to the ledger. orders: [{action,key,usdMicro,reason}]. prices: market map.
-// Returns executed order detail with real qty at live price. Throws on oversell.
-export function executeOrders(db, { orders, trigger, rationale, window, model, llm, prices, navMicro }) {
-  const pos = getPositions(db);
-  // market only for priced names
-  const qtyFor = (key, usdMicro) => {
-    const px = prices[key]?.lastMicro;
-    if (px == null || px <= 0) return 0n;
-    return (BigInt(usdMicro) * QTY_SCALE) / BigInt(px); // micro-units of the asset
+const FEE = BigInt(FEE_BPS);        // bps
+const SLIP = BigInt(SLIPPAGE_BPS);  // bps
+const TENK = 10_000n;
+
+export function executeOrders(db, { orders, trigger, rationale, window, model, llm, prices, navMicro, context }) {
+  const pos = getPositions(db); // { key: { qty, avgCost } }
+  let cash = getCash(db);
+
+  const pxOf = (k) => BigInt(prices[k]?.lastMicro || 0);
+  // effective fill = last price shifted by slippage (pay more on buy, get less on sell)
+  const level = (k, buy) => {
+    const px = pxOf(k);
+    const adj = (px * SLIP) / TENK;
+    return buy ? px + adj : px - adj;
   };
+  const buyCost = (nMicro) => nMicro + (nMicro * FEE) / TENK;      // notional + taker fee
+  const sellProceeds = (nMicro) => nMicro - (nMicro * FEE) / TENK; // notional - taker fee
 
   const executed = [];
-  const cl = { ...pos }; // flat { key: BigInt qty micro-units }
-  const pxOf = (k) => BigInt(prices[k]?.lastMicro || 0);
-  const usdOf = (k, qtyMicro) => (qtyMicro * pxOf(k)) / QTY_SCALE;
+
   for (const o of orders) {
     const usd = Math.max(0, Number(o.usdMicro || 0));
-    if (usd < 100_000) continue; // skip micro-dust (< $0.10)
-    if (o.action === "SELL") {
-      const held = cl[o.key] || 0n;
-      const qty = qtyFor(o.key, usd);
+    if (usd < 100_000) continue; // micro-dust (< $0.10)
+
+    if (o.action === "SELL" || o.action === "LIQUIDATE") {
+      const held = pos[o.key]?.qty || 0n;
+      if (held <= 0n) continue;
+      const lvl = level(o.key, false);
+      let qty = (BigInt(usd) * QTY_SCALE) / lvl;
+      if (o.action === "LIQUIDATE") qty = held;
+      if (qty > held) qty = held;
       if (qty <= 0n) continue;
-      const q = qty > held ? held : qty; // never oversell
-      if (q <= 0n) continue;
-      cl[o.key] = held - q;
-      executed.push({ action: "SELL", key: o.key, qtyMicro: q, usdMicro: usdOf(o.key, q), pxMicro: pxOf(o.key), detail: o.reason || "manual" });
+      const notional = (qty * lvl) / QTY_SCALE;
+      const proceeds = sellProceeds(notional);
+      const fee = (notional * FEE) / TENK;
+      // realized P&L vs cost basis (avgCost = micro-usd per micro-unit)
+      const avg = pos[o.key]?.avgCost;
+      const pnl = avg != null ? ((lvl - avg) * qty) / QTY_SCALE : 0n;
+      pos[o.key] = { ...pos[o.key], qty: held - qty, avgCost: held - qty === 0n ? null : pos[o.key].avgCost };
+      cash += proceeds;
+      if (pnl !== 0n) addRealized(db, pnl);
+      executed.push({ action: o.action, key: o.key, qtyMicro: qty, usdMicro: notional, pxMicro: lvl, pnlMicro: pnl, feeMicro: fee, detail: o.reason || "manual" });
     } else if (o.action === "BUY" || o.action === "HEDGE") {
-      const qty = qtyFor(o.key, usd);
+      const lvl = level(o.key, true);
+      // max NOTIONAL (micro-USD) cash can fund after fee: notional*(1+fee) <= cash
+      const maxNotional = (cash * TENK) / (TENK + FEE);
+      const want = BigInt(usd);
+      const targetNotional = want < maxNotional ? want : maxNotional;
+      if (targetNotional <= 0n) continue;
+      const qty = (targetNotional * QTY_SCALE) / lvl;
       if (qty <= 0n) continue;
-      cl[o.key] = (cl[o.key] || 0n) + qty;
-      executed.push({ action: o.action === "HEDGE" ? "HEDGE" : "BUY", key: o.key, qtyMicro: qty, usdMicro: usdOf(o.key, qty), pxMicro: pxOf(o.key), detail: o.reason || "manual" });
-    } else if (o.action === "LIQUIDATE") {
-      const held = cl[o.key] || 0n;
-      if (held > 0n) {
-        cl[o.key] = 0n;
-        executed.push({ action: "LIQUIDATE", key: o.key, qtyMicro: -held, usdMicro: -usdOf(o.key, held), pxMicro: pxOf(o.key), detail: o.reason || "breaker" });
-      }
+      const notional = (qty * lvl) / QTY_SCALE;
+      const cost = buyCost(notional);
+      if (cost > cash) continue;
+      const fee = (notional * FEE) / TENK;
+      executed.push({ action: o.action === "HEDGE" ? "HEDGE" : "BUY", key: o.key, qtyMicro: qty, usdMicro: notional, pxMicro: lvl, pnlMicro: 0n, feeMicro: fee, detail: o.reason || "manual" });
+      applyBuy(pos, o.key, qty, cost);
+      cash -= cost;
     }
   }
 
-  // write flat positions
-  for (const [key, qty] of Object.entries(cl)) setPosition(db, key, qty);
+  // write back positions (with cost basis) + cash
+  for (const [key, p] of Object.entries(pos)) setPosition(db, key, p.qty, p.avgCost);
+  setCash(db, cash);
 
-  // signed manifest for this decision (+ insert the paper-trading log row)
   const nonce = decisionId(db);
-  const manifest = signManifest({ window, nonce, ts: Date.now(), navMicro, trigger, prices, orders: executed, model, llm });
-  // decisions + orders rows are inserted by logDecision in agent.js (needs the seq back)
+  const manifest = signManifest({ window, nonce, ts: Date.now(), navMicro, trigger, prices, orders: executed, model, llm, context });
   return { executed, manifest, nonce, mode: EXECUTION_MODE };
+}
+
+function applyBuy(pos, key, qty, costUsdMicro) {
+  const prev = pos[key] || { qty: 0n, avgCost: null };
+  const newQty = prev.qty + qty;
+  let newAvg = costUsdMicro / qty;
+  if (prev.avgCost != null && prev.qty > 0n) {
+    newAvg = (prev.qty * prev.avgCost + costUsdMicro) / newQty;
+  }
+  pos[key] = { qty: newQty, avgCost: newAvg };
 }

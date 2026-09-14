@@ -51,17 +51,17 @@ intraday scalpers (the agent is a defensive manager, not a momentum bot) or anyo
 wants zero-touch fully-automated leverage (the agent is risk-capped by design).
 
 ### Part 3 · Validation data & key metrics
-**Observed (live, during competition, paper):** agent seeded $10k across 7 assets and
-autonomously senses on a ~5-min cadence; every decision is a timestamped, signed log row
-(`GET /api/decision-log.csv`) — a running 7-day paper-trading record starting **Sep 14**.
-Metrics that will be reported at submission: **paper Sharpe, max drawdown (capped at 10%
-by the circuit breaker), win rate, turnover, and decision count** computed from that log.
-**Targets (labeled):** >0.5 Sharpe, max-drawdown <8% (the breaker enforces <10%),
-a decision-dense log (>200 logged cycles), and documented real trade rows when target
-drift or cross-asset signals fire. **How effectiveness is proven:** the signed manifest
-of each trade + the CSV log reproduce every decision from {window, nonce, prices} — a
-judge can replay and audit the agent's history, and the live dashboard (SSE) shows it
-still running.
+**Observed (live, during competition, paper):** agent seeded $10k across 7 assets (cash-correct:
+NAV = cash + positions, fees + slippage charged) and autonomously senses on a ~5-min cadence;
+every decision is a timestamped, signed log row (`GET /api/decision-log.csv`) — a running 7-day
+paper-trading record starting **Sep 14**. **Metrics are computed live at `GET /api/metrics`**
+(Sharpe from the `equity_curve`, max drawdown, win rate + realized P&L from closed SELLs, trade
+count) — the exact numbers the judge can pull from the running agent. **Targets (labeled):**
+>0.5 Sharpe, max-drawdown <8% (the breaker enforces 10% by day, 5% at night), a decision-dense
+log (>200 logged cycles), and documented rotation trades when Fear-regime / target-drift fires.
+**How effectiveness is proven:** the signed manifest binds the context the agent saw
+(window, hour, NAV, cash, drawdown, Fear & Greed, headlines) — a judge can replay and audit
+every decision, and the live dashboard (SSE) shows it still running.
 
 ### Part 4 · Progress
 **Built:** full zero-dep Node agent — live Bitget rToken+crypto pricing (12-symbol

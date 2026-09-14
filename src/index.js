@@ -4,7 +4,8 @@ import http from "node:http";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { openDB, getPositions, getAgentState, listDecisions, decisionLogCsv, saveSnapshot } from "./db.js";
+import { openDB, flatPositions, getAgentState, listDecisions, decisionLogCsv, saveSnapshot, getCash, equityCurve, setKill, countDecisions } from "./db.js";
+import { computeMetrics } from "./analytics.js";
 import { refreshPrices } from "./market.js";
 import { portfolioState } from "./engine.js";
 import { runSweep, agentBus, currentWindow } from "./agent.js";
@@ -22,13 +23,30 @@ function json(res, code, body) {
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" });
   res.end(JSON.stringify(body));
 }
+
+function readBody(req, cap = 1_000_000) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on("data", (c) => {
+      size += c.length;
+      if (size > cap) { reject(new Error("body too large")); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      if (chunks.length === 0) return resolve({});
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))); }
+      catch { reject(new Error("invalid json")); }
+    });
+    req.on("error", reject);
+  });
+}
 function usd(micro) { const n = Number(BigInt(micro)); return n / 1e6; }
 
 async function viewModel() {
   const prices = await refreshPrices();
-  const pos = getPositions(db);
-  const st = portfolioState(pos, prices);
-  const nav = usd(st.total);
+  const st = portfolioState(flatPositions(db), prices);
+  const cash = getCash(db);
+  const nav = usd(st.total) + usd(cash);
   const seed = usd(SEED_USD_MICRO);
   const drawdown = seed > 0 ? Math.max(0, (seed - nav) / seed) : 0;
   const ag = getAgentState(db);
@@ -38,10 +56,10 @@ async function viewModel() {
     weight: nav > 0 ? d.valueUsd / nav : 0, priced: d.priced,
   }));
   return {
-    nav, seed, cash: 0, drawdown,
+    nav, seed, cash: usd(cash), drawdown,
     window: w.window, hour: w.hour,
     executionMode: EXECUTION_MODE, llm: LLM_MODE,
-    agent: { status: ag.status, nonce: ag.nonce, lastRun: ag.last_run_ts, breakerTripped: ag.breaker_tripped },
+    agent: { status: ag.status, nonce: ag.nonce, lastRun: ag.last_run_ts, breakerTripped: ag.breaker_tripped, killed: ag.kill_switched === 1, realizedPnlUsd: usd(ag.realized_pnl_micro || 0) },
     holdings,
     targets: Object.fromEntries(Object.entries(DEFAULT_TARGETS).map(([k, v]) => [k, usd(BigInt(v))])),
     decisions: listDecisions(db, 30),
@@ -63,6 +81,23 @@ async function route(req, res) {
   if (m === "GET" && p === "/api/prices") {
     const px = await refreshPrices(true);
     return json(res, 200, { prices: Object.fromEntries(Object.entries(px).map(([k, v]) => [k, v.lastMicro != null ? { usd: v.lastMicro / 1e6, micro: v.lastMicro, chg24: v.chg24, asset: v.asset } : { error: v.error }])) });
+  }
+
+  if (m === "GET" && p === "/api/metrics") {
+    return json(res, 200, computeMetrics(db));
+  }
+
+  if (m === "GET" && p === "/api/equity") {
+    const curve = equityCurve(db, 5000).map((r) => ({ ts: r.ts, nav: Number(r.nav_micro) / 1e6, cash: Number(r.cash_micro) / 1e6 }));
+    return json(res, 200, { observations: curve.length, curve });
+  }
+
+  if (m === "POST" && p === "/api/kill") {
+    let body = {};
+    try { body = await readBody(req); } catch { return json(res, 400, { error: "invalid json" }); }
+    const on = Boolean(body.on);
+    setKill(db, on);
+    return json(res, 200, { killed: on, message: on ? "trading halted (kill-switch on)" : "trading resumed" });
   }
 
   if (m === "GET" && p === "/api/decisions") return json(res, 200, { decisions: listDecisions(db, 200) });
