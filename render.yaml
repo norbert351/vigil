@@ -3,7 +3,7 @@ services:
     name: vigil
     runtime: node
     plan: free
-    buildCommand: ""
+    buildCommand: echo "no build step (zero dependencies)"
     startCommand: node src/index.js
     healthCheckPath: /health
     envVars:
