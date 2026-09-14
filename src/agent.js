@@ -14,6 +14,7 @@ import {
   setAgentState, saveSnapshot, logDecision, getAgentState, logEquity, isKilled,
 } from "./db.js";
 import { DEFAULT_TARGETS, SEED_USD_MICRO as SEED, QTY_SCALE, FEE_BPS, SLIPPAGE_BPS } from "./config.js";
+import { crossAssetRegime } from "./regime.js";
 
 export const agentBus = new EventEmitter();
 const TENK = 10_000n;
@@ -82,7 +83,8 @@ function decisionContext(state, perception) {
   const news = (perception?.news || []).slice(0, 3).map((n) => n.title || n).filter(Boolean);
   return {
     window: state.window, hour: state.hour, navMicro: Math.round(state.nav), cashMicro: Math.round(state.cash),
-    drawdown: state.drawdown, fearGreed: perception?.fearGreed || null, news, macro: perception?.macro || null,
+    drawdown: state.drawdown, fearGreed: perception?.fearGreed || null, regime: state.regime || null,
+    news, macro: perception?.macro || null,
     targets: Object.fromEntries(Object.entries(state.targets || {}).map(([k, v]) => [k, (Number(v) / 1e6).toFixed(2)])),
   };
 }
@@ -97,6 +99,8 @@ export async function runSweep(db, { force = false } = {}) {
   const seeded = await maybeSeed(db, DEFAULT_TARGETS, prices);
   const state = await buildState(db);
   const perception = latestPerception();
+  state.perception = perception;
+  state.regime = crossAssetRegime(state.prices, perception?.fearGreed?.value ?? null);
   const llm = llmFactory();
   const modelLabel = llmModel(llm);
   const fearGreed = perception?.fearGreed?.value ?? null;

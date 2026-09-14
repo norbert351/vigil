@@ -59,6 +59,9 @@ paper-trading record starting **Sep 14**. **Metrics are computed live at `GET /a
 count) — the exact numbers the judge can pull from the running agent. **Targets (labeled):**
 >0.5 Sharpe, max-drawdown <8% (the breaker enforces 10% by day, 5% at night), a decision-dense
 log (>200 logged cycles), and documented rotation trades when Fear-regime / target-drift fires.
+**In addition, a real 90-day historical backtest** (`GET /api/backtest`, actual Bitget daily
+klines + historical Fear & Greed, fees + slippage applied) validates the strategy's
+Sharpe/max-DD/regime behavior as supporting evidence.
 **How effectiveness is proven:** the signed manifest binds the context the agent saw
 (window, hour, NAV, cash, drawdown, Fear & Greed, headlines) — a judge can replay and audit
 every decision, and the live dashboard (SSE) shows it still running.

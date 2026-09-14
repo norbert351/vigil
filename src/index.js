@@ -9,7 +9,9 @@ import { computeMetrics } from "./analytics.js";
 import { refreshPrices } from "./market.js";
 import { portfolioState } from "./engine.js";
 import { runSweep, agentBus, currentWindow } from "./agent.js";
-import { startPerceptionLoop } from "./perception.js";
+import { startPerceptionLoop, latestPerception } from "./perception.js";
+import { runBacktest } from "./backtest.js";
+import { crossAssetRegime } from "./regime.js";
 import { EXECUTION_MODE, LLM_MODE, SEED_USD_MICRO, DEFAULT_TARGETS, UNIVERSE } from "./config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -51,13 +53,14 @@ async function viewModel() {
   const drawdown = seed > 0 ? Math.max(0, (seed - nav) / seed) : 0;
   const ag = getAgentState(db);
   const w = currentWindow();
+  const regime = crossAssetRegime(prices, latestPerception()?.fearGreed?.value ?? null);
   const holdings = Object.entries(st.detail).map(([k, d]) => ({
     key: k, name: d.name ?? k, qty: d.qty.toString(), priceUsd: d.priceUsd, valueUsd: d.valueUsd, chg24: d.chg24,
     weight: nav > 0 ? d.valueUsd / nav : 0, priced: d.priced,
   }));
   return {
     nav, seed, cash: usd(cash), drawdown,
-    window: w.window, hour: w.hour,
+    window: w.window, hour: w.hour, regime,
     executionMode: EXECUTION_MODE, llm: LLM_MODE,
     agent: { status: ag.status, nonce: ag.nonce, lastRun: ag.last_run_ts, breakerTripped: ag.breaker_tripped, killed: ag.kill_switched === 1, realizedPnlUsd: usd(ag.realized_pnl_micro || 0) },
     holdings,
@@ -85,6 +88,15 @@ async function route(req, res) {
 
   if (m === "GET" && p === "/api/metrics") {
     return json(res, 200, computeMetrics(db));
+  }
+
+  if (m === "GET" && p === "/api/backtest") {
+    const q = url.searchParams;
+    const days = Math.min(Math.max(Number(q.get("days") || 90), 30), 180);
+    try {
+      const bt = await runBacktest({ days, seed: Number(q.get("seed") || 10_000) });
+      return json(res, 200, bt);
+    } catch (e) { return json(res, 500, { error: String(e.message || e) }); }
   }
 
   if (m === "GET" && p === "/api/equity") {

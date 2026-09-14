@@ -108,11 +108,12 @@ function buildUserPrompt(state) {
   ).join("\n")) || "  (none)";
   return [
     `NAV $${fmt(s.nav)} cash $${fmt(s.cash || 0)} drawdown ${(s.drawdown * 100).toFixed(2)}% window=${s.window} killed=${!!s.killed}`,
+    s.regime ? `Macro regime: ${s.regime.regime} (score ${s.regime.score}, F&G ${s.regime.fng ?? "—"}, btc ${s.regime.btc24h}, rToken ${s.regime.equityAvg24h}, breadth ${s.regime.breadth})` : "",
     "Holdings:", rows,
     "Overnight perception:", s.perception ? JSON.stringify({ fearGreed: s.perception.fearGreed, news: (s.perception.news || []).slice(0, 4) }).slice(0, 1600) : "  (none)",
     "Risk flags:", `breaker=${!!s.breaker} killed=${!!s.killed}`,
     "Decide now.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function fmt(m) { const n = Number(m) / 1e6; return n.toLocaleString(undefined, { maximumFractionDigits: 0 }); }

@@ -80,9 +80,10 @@ equity-curve analytics, decision log, stub policy).
 
 ## Endpoints
 
-`GET /health` · `GET /api/state` · `GET /api/prices` · `GET /api/universe` ·
+`GET /health` · `GET /api/state` (incl. live macro regime) · `GET /api/prices` · `GET /api/universe` ·
 `GET /api/metrics` (Sharpe/maxDD/win-rate/realized P&L) · `GET /api/equity` (NAV curve) ·
-`GET /api/decisions` · `GET /api/decision-log.csv` · `POST /api/run` ·
+`GET /api/backtest?days=90` (real-data strategy backtest) · `GET /api/decisions` ·
+`GET /api/decision-log.csv` · `POST /api/run` ·
 `POST /api/kill {on:true|false}` (halt/resume) · `GET /api/agent/stream` (SSE) · `GET /`.
 
 ## What's under the hood
@@ -102,6 +103,12 @@ equity-curve analytics, decision log, stub policy).
   `VIGIL-<sha256>` manifest, so any decision is replayable and auditable.
 - **Equity curve + analytics** — each sweep logs NAV to `equity_curve`; `/api/metrics`
   derives Sharpe, max drawdown, win rate and realized P&L (the quant half of the rubric).
+- **Live cross-asset macro regime** — the agent computes a risk-on/neutral/risk-off regime from
+  live price action (BTC 24h, rToken/crypto breadth) + Fear & Greed, and feeds it to the
+  decision-maker and into every signed manifest.
+- **Historical backtest (real data)** — `GET /api/backtest` simulates the same strategy on
+  up to 90 daily bars of **actual Bitget klines** + historical Fear & Greed (10bp fee + 2bp
+  slippage), returning end NA/Sharpe/max-DD/trades for validation.
 - **Circuit breaker · kill-switch (file or `POST /api/kill`) · per-order + single-asset +
   aggregate crypto/rToken caps** — the always-on risk harness.
 
