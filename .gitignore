@@ -1,0 +1,13 @@
+# dependencies
+node_modules/
+
+# runtime state (never commit the ledger or secrets)
+vigil.sqlite
+vigil.sqlite-*
+kill.switch
+*.log
+
+# env
+.env
+.env.*
+!.env.example

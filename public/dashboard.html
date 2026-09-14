@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VIGIL — overnight cross-asset agent</title>
+<style>
+  :root { --ink:#0b0f14; --panel:#131a23; --line:#232e3d; --txt:#e6edf3; --mut:#8b98a8; --gold:#f5c26b; --green:#3dd68c; --red:#ff6b6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ink); color:var(--txt); font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:22px; }
+  h1 { font-size:22px; margin:0 0 2px; } h1 b { color:var(--gold); }
+  .sub { color:var(--mut); font-size:12px; margin-bottom:18px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .card .lab { color:var(--mut); font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+  .card .val { font-size:20px; font-weight:700; margin-top:4px; }
+  .card .val.win { color:var(--green); } .card .val.lose { color:var(--red); }
+  .bars { display:flex; height:190px; gap:6px; align-items:flex-end; margin:14px 0; }
+  .bar { flex:1; background:linear-gradient(180deg,var(--gold),#a06a1f); border-radius:4px 4px 0 0; position:relative; display:flex; align-items:flex-end; justify-content:center; color:var(--ink); font-size:10px; padding-bottom:3px; min-height:2px; }
+  h2 { font-size:15px; margin:20px 0 10px; color:var(--gold); }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th,td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); text-transform:uppercase; font-size:10px; letter-spacing:.05em; }
+  .pos { color:var(--green); } .neg { color:var(--red); }
+  .pill { display:inline-block; padding:1px 8px; border-radius:20px; background:#1f2b3a; color:var(--gold); font-size:10px; }
+  .pill.night { background:#3a2b1f; color:#ffcf8f; }
+  .mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .scroll { max-height:360px; overflow:auto; }
+  .dot { width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px;background:var(--green);}
+  .dot.off{background:var(--red);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><b>VIGIL</b> · the agent for the hours humans sleep</h1>
+  <div class="sub">LLM-autonomous overnight <b>cross-asset execution</b> agent — tokenized US stocks (rToken) + crypto on Bitget · Agentic Trading · <span id="win">…</span></div>
+
+  <div class="grid" id="kpis"></div>
+
+  <h2>Portfolio allocation <span id="window-pill" class="pill">…</span></h2>
+  <div class="bars" id="bars"></div>
+
+  <div class="grid" style="grid-template-columns:1fr 1fr;">
+    <div class="card"><div class="lab">Holdings</div><table id="holdings"><tr><td colspan="5">loading…</td></tr></table></div>
+    <div class="card"><div class="lab">Signed decision log <span class="mono" style="color:var(--mut)">(paper-trading)</span></div><div class="scroll"><table id="decisions"></table></div></div>
+  </div>
+
+  <p class="sub" style="margin-top:16px">Execution: <span id="mode">…</span> · Decision-maker: <span id="llm">…</span> · Each decision bound to window+nonce+prices and signed <span class="mono">VIGIL-&lt;sha256&gt;</span>.</p>
+</div>
+<script>
+const $=s=>document.querySelector(s); const U=n=>n? '$'+n.toLocaleString(undefined,{maximumFractionDigits:2}):'—';
+const MIME={};
+function wire(){
+  fetch('/api/state').then(r=>r.json()).then(render).catch(()=>{});
+  fetch('/api/decisions').then(r=>r.json()).then(d=>{
+    if(!d.decisions) return; const rows=d.decisions.map(x=>`
+      <tr><td class="mono">${x.seq}</td><td><span class="pill ${x.window}">${x.window}</span></td><td>${x.trigger}</td><td class="mono">${x.llm}</td><td>${U(Number(x.nav_micro)/1e6)}</td><td class="mono">${x.sentinel}</td></tr>`).join('');
+    $('#decisions').innerHTML=`<tr><th>#</th><th>win</th><th>trigger</th><th>llm</th><th>nav</th><th>verified</th></tr>`+rows;
+  }).catch(()=>{});
+}
+function render(s){
+  $('#win').textContent = s.executionMode==='paper'?'paper trading · '+(s.window==='night'?'night watch':s.window+' watch'):s.executionMode;
+  $('#mode').textContent=s.executionMode; $('#llm').textContent='qwen3.8-max (stub seam active)';
+  $('#window-pill').textContent='window: '+s.window;
+  $('#kpis').innerHTML=[
+    ['NAV', U(s.nav)],
+    ['Seed', U(s.seed)],
+    ['Drawdown', (s.drawdown*100).toFixed(2)+'%', s.drawdown>0.05?'lose':'win'],
+    ['Agent', s.agent.status],
+    ['Decisions', s.decisions? s.decisions.length : 0],
+  ].map(([l,v,c])=>`<div class="card"><div class="lab">${l}</div><div class="val ${c||''}">${v}</div></div>`).join('');
+  const hs=(s.holdings||[]).map(h=>
+    `<tr><td>${h.key}<br><span style="color:var(--mut)">qty ${Number(h.qty)/1e6}</span></td><td>${h.priceUsd!=null?U(h.priceUsd):'—'}</td><td>${U(h.valueUsd)}</td><td class="${h.chg24>0?'pos':'neg'}">${(h.chg24*100).toFixed(2)}%</td><td>${(h.weight*100).toFixed(1)}%</td></tr>`).join('');
+  $('#holdings').innerHTML=`<tr><th>asset</th><th>price</th><th>value</th><th>24h</th><th>wt</th></tr>`+hs;
+  const max=Math.max(1,...(s.holdings||[]).map(h=>h.valueUsd||0));
+  $('#bars').innerHTML=(s.holdings||[]).map(h=>`<div class="bar" style="height:${Math.max(2,((h.valueUsd||0)/max)*100)}%" title="${h.key} ${U(h.valueUsd)}">${((h.valueUsd||0)/s.nav*100).toFixed(0)}</div>`).join('');
+}
+setInterval(wire,5000);
+fetch('/api/agent/stream').then(r=>{ if(r.ok){ setInterval(()=>{},15000); } }).catch(()=>{});
+wire();
+</script>
+</body>
+</html>

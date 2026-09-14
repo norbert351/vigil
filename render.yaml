@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: vigil
+    runtime: node
+    plan: free
+    buildCommand: ""
+    startCommand: node src/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: VIGIL_EXEC
+        value: paper
+      - key: VIGIL_LLM
+        value: stub
+      - key: VIGIL_SEED_USD
+        value: "10000"
+      - key: VIGIL_SCAN_MS
+        value: "300000"
