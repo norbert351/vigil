@@ -87,6 +87,9 @@ function decisionContext(state, perception) {
   };
 }
 
+// The model + mode used to produce a decision (for the signed log).
+function llmModel(llm) { return llm.provider && llm.mode !== "stub" ? [llm.model, llm.provider].filter(Boolean).join(" @ ") : "deterministic-stub"; }
+
 // One decision cycle.
 export async function runSweep(db, { force = false } = {}) {
   const prices = await refreshPrices(true);
@@ -95,6 +98,7 @@ export async function runSweep(db, { force = false } = {}) {
   const state = await buildState(db);
   const perception = latestPerception();
   const llm = llmFactory();
+  const modelLabel = llmModel(llm);
   const fearGreed = perception?.fearGreed?.value ?? null;
 
   // hard risk gate (mandatory) — night + regime aware
@@ -128,15 +132,15 @@ export async function runSweep(db, { force = false } = {}) {
 
   if (orders.length === 0) {
     const holdTrigger = state.killed ? "killed" : risk.breaker ? "risk" : "hold";
-    logDecision(db, { ts: Date.now(), window: state.window, hash: "-", sentinel: "VIGIL-hold", trigger: holdTrigger, model: llm.mode === "qwen" ? "qwen3.8-max" : "stub", llm: llm.mode, navMicro, rationale, context, orders: [], mode: "paper" });
+    logDecision(db, { ts: Date.now(), window: state.window, hash: "-", sentinel: "VIGIL-hold", trigger: holdTrigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: [], mode: "paper" });
     setAgentState(db, { nav_micro: state.peak, cash_micro: state.cash, drawdown: state.drawdown, status: state.killed ? "killed" : "held", last_run_ts: Date.now() });
     logEquity(db, Date.now(), navMicro, BigInt(Math.round(state.cash)));
     agentBus.emit("event", { type: "decision", window: state.window, trigger: holdTrigger, llm: llm.mode, navMicro: state.nav.toString() });
     return { decision: holdTrigger, nav: state.nav, window: state.window, seeded };
   }
 
-  const res = executeOrders(db, { orders, trigger, rationale, window: state.window, model: llm.mode === "qwen" ? "qwen3.8-max" : "stub", llm: llm.mode, prices, navMicro, context });
-  logDecision(db, { ts: Date.now(), window: state.window, hash: res.manifest.hash, sentinel: res.manifest.sentinel, trigger, model: llm.mode === "qwen" ? "qwen3.8-max" : "stub", llm: llm.mode, navMicro, rationale, context, orders: res.executed, mode: res.mode });
+  const res = executeOrders(db, { orders, trigger, rationale, window: state.window, model: modelLabel, llm: llm.mode, prices, navMicro, context });
+  logDecision(db, { ts: Date.now(), window: state.window, hash: res.manifest.hash, sentinel: res.manifest.sentinel, trigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: res.executed, mode: res.mode });
   setAgentState(db, { nav_micro: state.peak, cash_micro: getCash(db), drawdown: state.drawdown, status: risk.breaker ? "breaker" : "traded", last_run_ts: Date.now(), nonce: res.nonce, breaker_tripped: risk.breaker ? 1 : 0 });
   logEquity(db, Date.now(), navMicro, getCash(db));
   agentBus.emit("event", { type: "decision", window: state.window, trigger, llm: llm.mode, navMicro: state.nav.toString(), hash: res.manifest.hash, orders: res.executed.length });

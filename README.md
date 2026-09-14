@@ -62,8 +62,11 @@ Env (all optional):
 | `PORT` | 8080 | HTTP port |
 | `VIGIL_SEED_USD` | 10000 | paper starting equity |
 | `VIGIL_EXEC` | `paper` | `paper` \| `bitget` |
-| `VIGIL_LLM` | `stub` | `stub` \| `qwen` |
-| `VIGIL_QWEN_API_KEY` | — | Qwen key (enables `VIGIL_LLM=qwen`) |
+| `VIGIL_LLM` | `stub` | `stub` (deterministic) \| `live` (OpenAI-compatible) \| `qwen` (Bitget Qwen) |
+| `VIGIL_LLM_BASE_URL` | — | live-mode endpoint (any OpenAI-compatible, e.g. Google) |
+| `VIGIL_LLM_MODEL` | — | live-mode model id |
+| `VIGIL_LLM_API_KEY` | — | live-mode key |
+| `VIGIL_QWEN_API_KEY` | — | Qwen key (sponsor endpoint, `VIGIL_LLM=qwen`) |
 | `VIGIL_SCAN_MS` | 300000 | decision cadence |
 | `VIGIL_MAX_DD` | 0.10 | circuit-breaker drawdown (day) |
 | `VIGIL_NIGHT_DD` | 0.05 | circuit-breaker drawdown (night mode) |
@@ -117,14 +120,18 @@ market.js (Bitget rToken+crypto)      perception.js (Bitget MCP + RSS + F&G)
 
 ## Honest status
 
-- **Verified**: live rToken + crypto prices (12-symbol universe resolves on Bitget),
-  end-to-end loop, **15/15 tests**, cash-correct paper ledger (NAV = cash + positions, no
-  overdraft), fees + slippage applied, signed decision log with bound context, live
-  perception (news + Fear & Greed), night-mode + Fear-regime rotation, equity curve with
-  Sharpe/max-DD/win-rate analytics, dashboard + CSV export.
-- **Paper by design**: execution is `simulated` at the live market price. Live rToken
-  settlement requires the Bitget Agentic account + API credentials.
-- **LLM seam**: Qwen is wired (`llm.js`) but the API key is provisioned via Bitget KYC;
-  until then the deterministic stub runs the identical loop.
+- **Live data (verified)**: rToken + crypto prices from Bitget's public API (real, moving);
+  news (Bitget MCP + Cointelegraph/BBC RSS) + Fear & Greed (alternative.me) — real signals.
+- **Live decision-maker (verified)**: the LLM is a REAL model wired through an OpenAI-compatible
+  seam (`Gemini 3.6 Flash` runs it today via `VIGIL_LLM=live`); the running agent's log records
+  `model: gemini-3.6-flash @ …` with genuine model-written rationales over live state. Bitget
+  **Qwen** (`qwen3.8-max`) is a one-var swap (`VIGIL_LLM=qwen` + key) once the sponsor credit is
+  provisioned — same seam, same loop.
+- **Paper execution by sanctioned rules**: orders settle on a cash-correct paper ledger at the
+  live market price (fees + slippage applied). This is what the Agentic Trading track explicitly
+  permits (`simulated or paper trading acceptable`). Real-venue execution is a Bitget
+  Demo/Agentic API key away — the seam (`EXECUTION_MODE=bitget`) is already present.
+- **Tested**: 15/15 specs (cash funding, no-overdraft, fee/slippage, sell-proceeds rotation,
+  night breaker, Fear rotation, kill-switch, equity analytics, decision log).
 
 *Not financial advice. Novel-aggressive strategy; no capital at risk in paper mode.*

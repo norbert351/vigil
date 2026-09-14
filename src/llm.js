@@ -119,31 +119,45 @@ function fmt(m) { const n = Number(m) / 1e6; return n.toLocaleString(undefined, 
 
 export function llmFactory() {
   const mode = String(LLM_MODE || "stub").toLowerCase();
-  if (mode !== "qwen") return { mode: "stub", decide: decideStub };
-  return { mode: "qwen", decide: decideQwen };
+  if (mode === "stub") return { mode: "stub", decide: decideStub };
+
+  // qwen = Bitget's sponsor endpoint; live = any OpenAI-compatible provider (env-wired).
+  const base = mode === "qwen" ? QWEN_BASE_URL : (process.env.VIGIL_LLM_BASE_URL || QWEN_BASE_URL);
+  const model = mode === "qwen" ? QWEN_MODEL : (process.env.VIGIL_LLM_MODEL || QWEN_MODEL);
+  const key = mode === "qwen" ? process.env.VIGIL_QWEN_API_KEY : process.env.VIGIL_LLM_API_KEY;
+  if (!key) {
+    console.warn("VIGIL: live-LLM mode requested but no API key wired — falling back to stub. Set VIGIL_LLM_API_KEY.");
+    return { mode: "stub", decide: decideStub };
+  }
+  const resolvedMode = mode === "qwen" ? "qwen" : "live";
+  const provider = mode === "qwen" ? "bitget-qwen" : (base || "custom");
+  return { mode: resolvedMode, model, provider, decide: (state) => decideLive(state, base, model, key) };
 }
 
-async function decideQwen(state, apiKey) {
+async function decideLive(state, base, model, key) {
   const body = JSON.stringify({
-    model: QWEN_MODEL,
+    model,
     messages: [
       { role: "system", content: buildSystemPrompt() },
       { role: "user", content: buildUserPrompt(state) },
     ],
     temperature: 0.2,
+    max_tokens: 4000,
   });
+  const url = `${base.replace(/\/+$/, "")}/chat/completions`;
   let lastErr;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch(`${QWEN_BASE_URL}/chat/completions`, {
+      const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
         body,
+        signal: AbortSignal.timeout(30_000),
       });
-      if (!res.ok) throw new Error(`qwen http ${res.status}`);
+      if (!res.ok) throw new Error(`llm http ${res.status}: ${(await res.text()).slice(0, 120)}`);
       const j = await res.json();
       const text = j?.choices?.[0]?.message?.content;
-      if (!text) throw new Error("qwen empty");
+      if (!text) throw new Error("llm empty completion");
       return parseDecision(text);
     } catch (e) { lastErr = e; }
   }

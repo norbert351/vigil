@@ -66,12 +66,15 @@ every decision, and the live dashboard (SSE) shows it still running.
 ### Part 4 · Progress
 **Built:** full zero-dep Node agent — live Bitget rToken+crypto pricing (12-symbol
 universe), overnight perception (Bitget market-data MCP + RSS + Fear&Greed fallbacks),
-LLM decision seam (Qwen wired, deterministic stub default until the Qwen key is
-provisioned), hard risk layer, paper executor, signed-manifest ledger, HTTP/SSE
-dashboard, **9/9 tests green**, public repo, fresh clone verified to boot. **Not yet:**
-live Bitget Agentic-account execution (paper by design; the UTA v3 demo seam is in
-place), and the Qwen key (pending KYC credit). **Frameworks/APIs:** node:sqlite,
-node:http, Bitget UTA v3 public market data, Bitget Agent Hub / market-data MCP.
+a **LIVE LLM decision-maker** (OpenAI-compatible seam; running today on Gemini 3.6 Flash
+with Bitget **Qwen `qwen3.8-max`** as a one-var sponsor swap), hard risk layer
+(night-mode + Fear-regime rotation), cash-correct paper executor (fees + slippage),
+signed-manifest ledger with bound context, equity-curve + Sharpe/max-DD/win-rate
+analytics, HTTP/SSE dashboard, **15/15 tests green**, public repo, fresh clone verified
+to boot. **Not yet:** real-venue (Bitget Demo/Agentic) execution — the `EXECUTION_MODE=bitget`
+seam is in place, pending a Demo API key — and the Qwen sponsor key (pending KYC credit).
+**Frameworks/APIs:** node:sqlite, node:http, Bitget UTA v3 public market data, Bitget
+Agent Hub / market-data MCP, an OpenAI-compatible LLM endpoint.
 
 ### Part 5 · Deliverables (in Submission Materials Link)
 - Public **GitHub repo** (code, tests, render.yaml, README)
@@ -88,11 +91,13 @@ objection by signing every move into an auditable manifest.
 ---
 
 ## 3. Role of the LLM in Your Project
-Qwen (`qwen3.8-max`, Bitget `hackathon.bitgetops.com` endpoint) is wired as the
-**decision-maker** via `src/llm.js` (OpenAI-compatible JSON output: trigger + rationale +
-orders). It interprets the overnight perception + live portfolio and proposes
-risk-aware orders; the hard risk layer then gates and sizes them. Until the Qwen build
-credits key is provisioned, a **deterministic stub** runs the identical loop (same
-sense → reason → gate → execute → sign), so the agent is live and producing its
-paper-trading log today, with Qwen being the drop-in swap. (`VIGIL_LLM=qwen` +
-`VIGIL_QWEN_API_KEY`.)
+A **real LLM is the decision-maker** (not an assistant). It runs through an
+OpenAI-compatible seam (`src/llm.js`): it receives the live portfolio state (NAV, cash,
+drawdown, holdings with 24h moves) plus the overnight perception (Fear & Greed, top
+headlines), and returns `{trigger, rationale, orders}`. The hard risk layer then gates
+and sizes those orders. The agent is running today on **Gemini 3.6 Flash** (`VIGIL_LLM=live`)
+and records `model: gemini-3.6-flash @ …` in its signed decision log with genuine
+model-written rationales — verifiable live at `GET /api/decisions`. Bitget **Qwen
+`qwen3.8-max`** (sponsor endpoint `hackathon.bitgetops.com`) is a one-var swap
+(`VIGIL_LLM=qwen` + the KYC-provisioned key) on the identical seam and loop; the log
+will then record the Qwen model id and provider.
