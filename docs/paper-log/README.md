@@ -2,6 +2,6 @@
 
 Live snapshot of the autonomous agent decision log.
 
-- last snapshot: 2026-09-14T23:16:36Z
-- decisions logged: 120
+- last snapshot: 2026-09-15T23:17:39Z
+- decisions logged: 11
 - source: GET /api/decision-log.csv on the running agent
