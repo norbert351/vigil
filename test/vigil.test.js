@@ -74,20 +74,20 @@ test("risk caps any single order to MAX_ORDER_PCT of NAV", () => {
 });
 
 // --- EXECUTOR (cash-correct) ---
-test("executor never oversells and credits cash + realized P&L", () => {
+test("executor never oversells and credits cash + realized P&L", async () => {
   const db = freshDb();
   setPosition(db, "rtsla", 1_000_000n, 359_770_000n); // 1 unit @ cost ~price
-  const res = executeOrders(db, { orders: [{ action: "SELL", key: "rtsla", usdMicro: 1_000_000_000_000 }], trigger: "risk", rationale: "t", window: "day", model: "stub", llm: "stub", prices: PX, navMicro: 1_000_000_000n, context: null });
+  const res = await executeOrders(db, { orders: [{ action: "SELL", key: "rtsla", usdMicro: 1_000_000_000_000 }], trigger: "risk", rationale: "t", window: "day", model: "stub", llm: "stub", prices: PX, navMicro: 1_000_000_000n, context: null });
   const after = flatPositions(db);
   assert.ok(after.rtsla >= 0n, "no negative qty");
   assert.ok(getCash(db) > 0n, "sale credited cash");
   assert.equal(res.manifest.sentinel.startsWith("VIGIL-"), true);
 });
 
-test("executor BUY is cash-funded: cannot buy what it has no cash for", () => {
+test("executor BUY is cash-funded: cannot buy what it has no cash for", async () => {
   const db = freshDb();
   setCash(db, 500_000_000n); // $500 cash
-  const res = executeOrders(db, { orders: [{ action: "BUY", key: "rnvda", usdMicro: 2_000_000_000 }], trigger: "rebalance", rationale: "t", window: "night", model: "stub", llm: "stub", prices: PX, navMicro: 10_000_000_000n, context: null });
+  const res = await executeOrders(db, { orders: [{ action: "BUY", key: "rnvda", usdMicro: 2_000_000_000 }], trigger: "rebalance", rationale: "t", window: "night", model: "stub", llm: "stub", prices: PX, navMicro: 10_000_000_000n, context: null });
   // bought ~$499 (affordable from $500 cash), NOT the $2000 requested
   const rnvdaQty = flatPositions(db).rnvda || 0n;
   const boughtUsd = (Number(rnvdaQty) * PX.rnvda.lastMicro) / 1e6 / 1e6;
@@ -95,11 +95,11 @@ test("executor BUY is cash-funded: cannot buy what it has no cash for", () => {
   assert.ok(getCash(db) < 500_000_000n, "cash spent");
 });
 
-test("executor BUY from a sell's proceeds in the same batch (rotation is cash-funded)", () => {
+test("executor BUY from a sell's proceeds in the same batch (rotation is cash-funded)", async () => {
   const db = freshDb();
   setPosition(db, "btc", 1_000_000n, 77_920_760_000n);
   setCash(db, 0n);
-  const res = executeOrders(db, { orders: [
+  const res = await executeOrders(db, { orders: [
     { action: "SELL", key: "btc", usdMicro: 2_000_000_000 },
     { action: "BUY", key: "rspy", usdMicro: 1_000_000_000 },
   ], trigger: "hedge", rationale: "t", window: "night", model: "stub", llm: "stub", prices: PX, navMicro: 10_000_000_000n, context: null });
@@ -107,10 +107,10 @@ test("executor BUY from a sell's proceeds in the same batch (rotation is cash-fu
   assert.ok(pos.rspy > 0n, "sell proceeds funded the defensive buy");
 });
 
-test("executor deducts fee + slippage on buys", () => {
+test("executor deducts fee + slippage on buys", async () => {
   const db = freshDb();
   setCash(db, 1_000_000_000n); // $1000
-  const res = executeOrders(db, { orders: [{ action: "BUY", key: "rspy", usdMicro: 500_000_000 }], trigger: "rebalance", rationale: "t", window: "day", model: "stub", llm: "stub", prices: PX, navMicro: 1e10, context: null });
+  const res = await executeOrders(db, { orders: [{ action: "BUY", key: "rspy", usdMicro: 500_000_000 }], trigger: "rebalance", rationale: "t", window: "day", model: "stub", llm: "stub", prices: PX, navMicro: 1e10, context: null });
   const order = res.executed[0];
   assert.ok(order.feeMicro > 0n, "fee charged");
   // fill should be >= price due to slippage on buy

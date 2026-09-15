@@ -6,14 +6,14 @@ import { EventEmitter } from "node:events";
 import { refreshPrices } from "./market.js";
 import { portfolioState } from "./engine.js";
 import { planOrders } from "./risk.js";
-import { executeOrders } from "./executor.js";
+import { executeOrders, syncLedgerFromVenue } from "./executor.js";
 import { latestPerception } from "./perception.js";
 import { llmFactory } from "./llm.js";
 import {
   flatPositions, setPosition, getCash, setCash, addRealized,
   setAgentState, saveSnapshot, logDecision, getAgentState, logEquity, isKilled,
 } from "./db.js";
-import { DEFAULT_TARGETS, SEED_USD_MICRO as SEED, QTY_SCALE, FEE_BPS, SLIPPAGE_BPS } from "./config.js";
+import { DEFAULT_TARGETS, SEED_USD_MICRO as SEED, QTY_SCALE, FEE_BPS, SLIPPAGE_BPS, EXECUTION_MODE } from "./config.js";
 import { crossAssetRegime } from "./regime.js";
 
 export const agentBus = new EventEmitter();
@@ -96,7 +96,20 @@ function llmModel(llm) { return llm.provider && llm.mode !== "stub" ? [llm.model
 export async function runSweep(db, { force = false } = {}) {
   const prices = await refreshPrices(true);
   saveSnapshot(db, JSON.stringify(prices));
-  const seeded = await maybeSeed(db, DEFAULT_TARGETS, prices);
+  const venueMode = EXECUTION_MODE === "bitget";
+  // bitget mode: the venue IS the account — sync ledger from venue truth, no paper seed.
+  if (venueMode) {
+    try {
+      await syncLedgerFromVenue(db, prices);
+      // a fresh venue account with zero positions starts the peak at current balance
+      const st0 = getAgentState(db);
+      const nav0 = portfolioState(flatPositions(db), prices).total + getCash(db);
+      if (Number(st0.nav_micro || 0) === 0 && nav0 > 0n) {
+        setAgentState(db, { nav_micro: Number(nav0), status: "seeded", last_run_ts: Date.now(), drawdown: 0 });
+      }
+    } catch (e) { console.error("venue sync", e.message); }
+  }
+  const seeded = venueMode ? false : await maybeSeed(db, DEFAULT_TARGETS, prices);
   const state = await buildState(db);
   const perception = latestPerception();
   state.perception = perception;
@@ -136,14 +149,14 @@ export async function runSweep(db, { force = false } = {}) {
 
   if (orders.length === 0) {
     const holdTrigger = state.killed ? "killed" : risk.breaker ? "risk" : "hold";
-    logDecision(db, { ts: Date.now(), window: state.window, hash: "-", sentinel: "VIGIL-hold", trigger: holdTrigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: [], mode: "paper" });
+    logDecision(db, { ts: Date.now(), window: state.window, hash: "-", sentinel: "VIGIL-hold", trigger: holdTrigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: [], mode: EXECUTION_MODE });
     setAgentState(db, { nav_micro: state.peak, cash_micro: state.cash, drawdown: state.drawdown, status: state.killed ? "killed" : "held", last_run_ts: Date.now() });
     logEquity(db, Date.now(), navMicro, BigInt(Math.round(state.cash)));
     agentBus.emit("event", { type: "decision", window: state.window, trigger: holdTrigger, llm: llm.mode, navMicro: state.nav.toString() });
     return { decision: holdTrigger, nav: state.nav, window: state.window, seeded };
   }
 
-  const res = executeOrders(db, { orders, trigger, rationale, window: state.window, model: modelLabel, llm: llm.mode, prices, navMicro, context });
+  const res = await executeOrders(db, { orders, trigger, rationale, window: state.window, model: modelLabel, llm: llm.mode, prices, navMicro, context });
   logDecision(db, { ts: Date.now(), window: state.window, hash: res.manifest.hash, sentinel: res.manifest.sentinel, trigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: res.executed, mode: res.mode });
   setAgentState(db, { nav_micro: state.peak, cash_micro: getCash(db), drawdown: state.drawdown, status: risk.breaker ? "breaker" : "traded", last_run_ts: Date.now(), nonce: res.nonce, breaker_tripped: risk.breaker ? 1 : 0 });
   logEquity(db, Date.now(), navMicro, getCash(db));

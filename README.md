@@ -50,12 +50,46 @@ Every cycle (~5 min) the agent:
 ## Quick start
 
 ```bash
-node --version   # >= 20 (uses node:sqlite)
-node src/index.js
-# dashboard: http://localhost:8080/  ·  log: /api/decision-log.csv
+npm install
+npm start            # http://localhost:8080 (paper ledger, stub LLM)
+npm test             # 15 tests: engine / risk / executor / db / llm
 ```
 
-Env (all optional):
+## Execution modes
+
+| Mode | `VIGIL_EXEC` | What happens |
+|---|---|---|
+| **Paper** (default) | unset/`paper` | Cash-correct local ledger at live market prices, fee + slippage, signed manifest log. Zero external credentials. |
+| **Bitget demo venue** | `bitget` | Real signed UTA v3 spot market orders on Bitget's **paper-trading environment** (`PAPTRADING:1` — virtual funds only, never real money). Ledger re-syncs to venue truth after every sweep. |
+
+### Bitget venue setup
+
+1. Create a **Demo API key** on Bitget (system-generated, permissions: **Read + Trade**, **no Withdraw**). You get API Key + Secret + Passphrase.
+2. Fund the demo **spot** wallet with virtual USDT (Bitget's demo console top-up button — futures demo is auto-funded, spot is not).
+3. Export the three values + `VIGIL_EXEC=bitget`:
+
+```bash
+export VIGIL_EXEC=bitget
+export VIGIL_BITGET_API_KEY=bg_...
+export VIGIL_BITGET_SECRET=...
+export VIGIL_BITGET_PASSPHRASE=...
+npm start
+```
+
+`src/venue.js` signs every request (HMAC-SHA256, `ACCESS-*` headers) and normalizes micro-units ↔ venue decimal strings. Credentials live only in your shell or a gitignored `.env` (see `.env.example`) — never in the repo.
+
+## The problem
+
+> US equities close. Tokenized US stocks (Bitget **rToken**, `R<SYMBOL>USDT`) do not — they
+> trade 7×24. Over the 2026 Labor Day weekend the NYSE was shut for **89.5 hours** while
+> tokenized stocks still printed **$1.41 billion** of continuous volume. Prices move on
+> macro news at 2am Sunday; the human is asleep; nobody rebalances or hedges. And the #1
+> complaint about the asset class is **execution quality** — thin books and slippage when
+> you *do* trade.
+>
+> **VIGIL is the agent that works those hours.**
+
+## Env (all optional)
 
 | Var | Default | Meaning |
 |---|---|---|
