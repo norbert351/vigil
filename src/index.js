@@ -13,6 +13,10 @@ import { startPerceptionLoop, latestPerception } from "./perception.js";
 import { runBacktest } from "./backtest.js";
 import { crossAssetRegime } from "./regime.js";
 import { EXECUTION_MODE, LLM_MODE, SEED_USD_MICRO, DEFAULT_TARGETS, UNIVERSE } from "./config.js";
+import {
+  createSession, getSession, authorize, sessionState, restartLoops,
+  listSessions, decryptCreds, sessionDb, sessionVenue, SessionError, MAX_SESSIONS,
+} from "./sessions.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
@@ -44,14 +48,14 @@ function readBody(req, cap = 1_000_000) {
 }
 function usd(micro) { const n = Number(BigInt(micro)); return n / 1e6; }
 
-async function viewModel() {
+async function viewModelFor(database, opts = {}) {
   const prices = await refreshPrices();
-  const st = portfolioState(flatPositions(db), prices);
-  const cash = getCash(db);
+  const st = portfolioState(flatPositions(database), prices);
+  const cash = getCash(database);
   const nav = usd(st.total) + usd(cash);
   const seed = usd(SEED_USD_MICRO);
   const drawdown = seed > 0 ? Math.max(0, (seed - nav) / seed) : 0;
-  const ag = getAgentState(db);
+  const ag = getAgentState(database);
   const w = currentWindow();
   const regime = crossAssetRegime(prices, latestPerception()?.fearGreed?.value ?? null);
   const holdings = Object.entries(st.detail).map(([k, d]) => ({
@@ -61,13 +65,16 @@ async function viewModel() {
   return {
     nav, seed, cash: usd(cash), drawdown,
     window: w.window, hour: w.hour, regime,
-    executionMode: EXECUTION_MODE, llm: LLM_MODE,
+    executionMode: opts.executionMode || EXECUTION_MODE, llm: opts.llm || LLM_MODE,
+    session: opts.session || null,
     agent: { status: ag.status, nonce: ag.nonce, lastRun: ag.last_run_ts, breakerTripped: ag.breaker_tripped, killed: ag.kill_switched === 1, realizedPnlUsd: usd(ag.realized_pnl_micro || 0) },
     holdings,
     targets: Object.fromEntries(Object.entries(DEFAULT_TARGETS).map(([k, v]) => [k, usd(BigInt(v))])),
-    decisions: listDecisions(db, 30),
+    decisions: listDecisions(database, 30),
   };
 }
+
+const viewModel = () => viewModelFor(db);
 
 async function route(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
@@ -141,11 +148,74 @@ async function route(req, res) {
     return;
   }
 
+  // ---- multi-session Connect flow ----
+  if (m === "GET" && p === "/api/sessions") return json(res, 200, { sessions: listSessions(), capacity: MAX_SESSIONS });
+
+  if (m === "POST" && p === "/api/sessions") {
+    let body;
+    try { body = await readBody(req); } catch { return json(res, 400, { error: "invalid json" }); }
+    const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+    try {
+      const s = await createSession({ apiKey: body.apiKey, secret: body.secret, passphrase: body.passphrase, name: body.name, ip });
+      return json(res, 201, { ok: true, session: { id: s.id, name: s.name, ownerKey: s.ownerKey, usdt: s.usdt } });
+    } catch (e) {
+      const code = e instanceof SessionError ? e.code : "INTERNAL";
+      const status = (["MISSING", "REJECTED", "LIVE_KEY", "RATE", "FULL"].includes(code)) ? 400 : 500;
+      return json(res, status, { ok: false, code, error: e.message });
+    }
+  }
+
+  // session-scoped state (public — read-only view of an isolated book)
+  const sm = p.match(/^\/api\/sessions\/([0-9a-f]+)\/(state|decisions|metrics|log\.csv)$/);
+  if (m === "GET" && sm) {
+    const session = getSession(sm[1]);
+    if (!session) return json(res, 404, { error: "session not found" });
+    const sdb = sessionDb(session.id);
+    if (sm[2] === "state") return json(res, 200, await viewModelFor(sdb, { executionMode: "bitget", llm: LLM_MODE, session: { id: session.id, name: session.name, createdAt: session.createdAt } }));
+    if (sm[2] === "decisions") return json(res, 200, { decisions: listDecisions(sdb, 200) });
+    if (sm[2] === "metrics") return json(res, 200, computeMetrics(sdb));
+    if (sm[2] === "log.csv") {
+      const rows = decisionLogCsv(sdb, 0);
+      const hdr = "seq,ts,window,trigger,llm,nav_micro,rationale,orders";
+      const lines = [hdr];
+      for (const r of rows) {
+        const esc = (s) => `"${String(s ?? "").replace(/"/g, "'")}"`;
+        lines.push([r.seq, r.ts, r.window, r.trigger, r.llm, r.nav_micro, esc(r.rationale), esc(r.orders)].join(","));
+      }
+      res.writeHead(200, { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="vigil-${session.id}-decision-log.csv"` });
+      return res.end(lines.join("\n"));
+    }
+  }
+
+  // owner-authed actions: force sweep, kill switch, delete
+  const osm = p.match(/^\/api\/sessions\/([0-9a-f]+)\/(run|kill|delete)$/);
+  if (m === "POST" && osm) {
+    const session = getSession(osm[1]);
+    if (!session) return json(res, 404, { error: "session not found" });
+    const owner = req.headers["x-vigil-owner"] || "";
+    if (!authorize(session, owner)) return json(res, 403, { error: "not authorized — owner key required" });
+    const sdb = sessionDb(session.id);
+    if (osm[2] === "run") {
+      try {
+        const venue = sessionVenue(session.id);
+        const r = await runSweep(sdb, { venue, execMode: "bitget" });
+        return json(res, 200, r);
+      } catch (e) { return json(res, 500, { error: String(e.message || e) }); }
+    }
+    if (osm[2] === "kill") {
+      let b = {};
+      try { b = await readBody(req); } catch { /* default on */ }
+      setKill(sdb, Boolean(b.on));
+      return json(res, 200, { killed: Boolean(b.on) });
+    }
+  }
+
   // static
   if (m === "GET" || m === "HEAD") {
     let file = path.normalize(url.pathname);
     if (file === "/" || file === "") file = "/landing.html";
     else if (file === "/app") file = "/dashboard.html";
+    else if (file === "/connect") file = "/connect.html";
     if (file.includes("..")) return json(res, 403, { error: "forbidden" });
     const abs = path.join(PUBLIC_DIR, file);
     if (!abs.startsWith(PUBLIC_DIR) || !existsSync(abs) || !statSync(abs).isFile()) return json(res, 404, { error: "not found" });
@@ -168,6 +238,7 @@ const server = http.createServer((req, res) => route(req, res).catch((e) => {
 server.listen(PORT, () => {
   console.log(`VIGIL listening on :${PORT} (exec=${EXECUTION_MODE}, llm=${LLM_MODE})`);
   startPerceptionLoop();      // background overnight context (MCP + fallbacks)
+  restartLoops().catch((e) => console.error("session restart", e.message)); // resume user sessions
   // warm a first sweep so the dashboard has data
   runSweep(db).then((r) => console.log("warm sweep:", JSON.stringify(r).slice(0, 200))).catch((e) => console.error("warm", e.message));
 });

@@ -195,6 +195,14 @@ td .sub{display:block;font-size:11px;color:var(--mut);font-family:var(--mono)}
   var $ = function(id){ return document.getElementById(id); };
   var U = function(n){ return n==null ? '—' : '$' + Number(n).toLocaleString(undefined,{maximumFractionDigits:2}); };
 
+  /* session mode: /app?s=<id> loads an isolated user book */
+  var sid = new URLSearchParams(location.search).get('s') || '';
+  var ownerKey = sid ? (localStorage.getItem('vigil_owner_' + sid) || '') : '';
+  var STATE_URL  = sid ? '/api/sessions/' + sid + '/state'     : '/api/state';
+  var DEC_URL    = sid ? '/api/sessions/' + sid + '/decisions' : '/api/decisions';
+  var KILL_URL   = sid ? '/api/sessions/' + sid + '/kill'      : '/api/kill';
+  var RUN_URL    = sid ? '/api/sessions/' + sid + '/run'       : null;
+
   var reveals = document.querySelectorAll('.reveal');
   if ('IntersectionObserver' in window){
     var io = new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } }); }, {threshold:.08});
@@ -203,9 +211,9 @@ td .sub{display:block;font-size:11px;color:var(--mut);font-family:var(--mono)}
 
   var metrics = null;
   function load(){
-    fetch('/api/metrics').then(function(r){ return r.ok?r.json():null; }).then(function(m){ metrics = m; }).catch(function(){});
-    fetch('/api/state').then(function(r){ return r.ok?r.json():null; }).then(render).catch(function(){});
-    fetch('/api/decisions').then(function(r){ return r.ok?r.json():null; }).then(function(d){ renderDecisions(d); }).catch(function(){});
+    fetch(sid ? ('/api/sessions/' + sid + '/metrics') : '/api/metrics').then(function(r){ return r.ok?r.json():null; }).then(function(m){ metrics = m; }).catch(function(){});
+    fetch(STATE_URL).then(function(r){ return r.ok?r.json():null; }).then(render).catch(function(){});
+    fetch(DEC_URL).then(function(r){ return r.ok?r.json():null; }).then(renderDecisions).catch(function(){});
   }
 
   function render(s){
@@ -220,8 +228,14 @@ td .sub{display:block;font-size:11px;color:var(--mut);font-family:var(--mono)}
     if (s.agent && s.agent.killed){ $('p-window').className = 'pill bad'; }
     /* connect pill */
     var conn = $('conn'), ct = $('conn-txt');
-    if (s.executionMode === 'bitget'){ conn.classList.remove('off'); ct.textContent = 'Connected · Bitget venue'; }
-    else { conn.classList.add('off'); ct.textContent = 'Paper execution · connect?'; }  /* demo-mode honesty */
+    if (s.session){
+      conn.classList.remove('off');
+      ct.textContent = ownerKey ? 'Your book · connected' : 'Connected · ' + (s.session.name||'user book');
+    } else if (s.executionMode === 'bitget'){
+      conn.classList.remove('off'); ct.textContent = 'Connected · Bitget venue';
+    } else {
+      conn.classList.add('off'); ct.textContent = 'Paper execution · connect?';  /* demo-mode honesty */
+    }
     /* kpis */
     var K = [
       ['NAV', U(nav)],
@@ -250,6 +264,10 @@ td .sub{display:block;font-size:11px;color:var(--mut);font-family:var(--mono)}
     $('p-nav2').textContent = 'NAV ' + U(nav);
     $('s-exec').textContent = s.executionMode;
     $('s-llm').textContent = s.llm + (d && d.model ? ' · ' + d.model : '');
+    /* session owner controls */
+    if (sid){
+      $('kill').style.display = ownerKey ? 'inline-block' : 'none';
+    }
   }
 
   function renderDecisions(d){
@@ -260,8 +278,9 @@ td .sub{display:block;font-size:11px;color:var(--mut);font-family:var(--mono)}
     $('decisions').innerHTML = '<tr><th>#</th><th>Win</th><th>Trigger</th><th>LLM</th><th>NAV</th><th>Sentinel</th></tr>' + rows;
   }
 
-  /* SSE feed */
+  /* SSE feed — flagship stream for /app; session polls its OWN decisions */
   var feed = $('feed');
+  var lastSeq = 0;
   function feedEv(e){
     var ev = document.createElement('div');
     ev.className = 'ev';
@@ -269,19 +288,37 @@ td .sub{display:block;font-size:11px;color:var(--mut);font-family:var(--mono)}
     feed.insertBefore(ev, feed.firstChild);
     while (feed.children.length > 8) feed.removeChild(feed.lastChild);
   }
-  try {
-    var es = new EventSource('/api/agent/stream');
-    es.addEventListener('hello', function(){ feed.innerHTML=''; });
-    es.addEventListener('event', function(m){ try { feedEv(JSON.parse(m.data)); } catch(e){} });
-    es.addEventListener('sweep', function(m){ try { feedEv(JSON.parse(m.data)); } catch(e){} });
-    es.onerror = function(){ if (es.readyState === EventSource.CLOSED){ feedEv({type:'stream', msg:'reconnecting…'}); } };
-  } catch(e){}
+  if (sid){
+    /* sessions have their own ledger — poll for new decisions and surface them */
+    function pollSession(){
+      fetch(DEC_URL).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+        if (!d || !d.decisions || !d.decisions.length) return;
+        var top = d.decisions[0];
+        if (top.seq && top.seq !== lastSeq){
+          lastSeq = top.seq;
+          feedEv({type:'decision', trigger: top.trigger, msg: (top.rationale||'').slice(0,120)});
+        }
+      }).catch(function(){});
+    }
+    setInterval(pollSession, 8000);
+    feedEv({type:'session', msg:'your book is live — decisions appear here as the agent sweeps'});
+  } else {
+    try {
+      var es = new EventSource('/api/agent/stream');
+      es.addEventListener('hello', function(){ feed.innerHTML=''; });
+      es.addEventListener('event', function(m){ try { feedEv(JSON.parse(m.data)); } catch(e){} });
+      es.addEventListener('sweep', function(m){ try { feedEv(JSON.parse(m.data)); } catch(e){} });
+      es.onerror = function(){ if (es.readyState === EventSource.CLOSED){ feedEv({type:'stream', msg:'reconnecting…'}); } };
+    } catch(e){}
+  }
 
   /* kill switch */
   var kill = $('kill');
   kill.addEventListener('click', function(){
     var on = !kill.classList.contains('on');
-    fetch('/api/kill', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({on: on})})
+    var opts = {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({on: on})};
+    if (sid) opts.headers['X-VIGIL-OWNER'] = ownerKey;
+    fetch(KILL_URL, opts)
       .then(function(r){ return r.json(); })
       .then(function(j){
         if (j && j.killed !== undefined){

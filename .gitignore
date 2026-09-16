@@ -6,6 +6,7 @@ vigil.sqlite
 vigil.sqlite-*
 kill.switch
 *.log
+data/
 
 # env
 .env

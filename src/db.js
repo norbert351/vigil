@@ -5,8 +5,8 @@
 // Agentic Trading track's "decision explainability + paper-trading log" judged on.
 import { DatabaseSync } from "node:sqlite";
 
-export function openDB() {
-  const db = new DatabaseSync(process.env.VIGIL_DB_PATH || "./vigil.sqlite");
+export function openDB(dbPath) {
+  const db = new DatabaseSync(dbPath || process.env.VIGIL_DB_PATH || "./vigil.sqlite");
   db.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS positions (

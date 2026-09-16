@@ -93,14 +93,15 @@ function decisionContext(state, perception) {
 function llmModel(llm) { return llm.provider && llm.mode !== "stub" ? [llm.model, llm.provider].filter(Boolean).join(" @ ") : "deterministic-stub"; }
 
 // One decision cycle.
-export async function runSweep(db, { force = false } = {}) {
+export async function runSweep(db, { force = false, venue, execMode } = {}) {
+  const mode = execMode || EXECUTION_MODE;
   const prices = await refreshPrices(true);
   saveSnapshot(db, JSON.stringify(prices));
-  const venueMode = EXECUTION_MODE === "bitget";
+  const venueMode = mode === "bitget";
   // bitget mode: the venue IS the account — sync ledger from venue truth, no paper seed.
   if (venueMode) {
     try {
-      await syncLedgerFromVenue(db, prices);
+      await syncLedgerFromVenue(db, prices, venue);
       // a fresh venue account with zero positions starts the peak at current balance
       const st0 = getAgentState(db);
       const nav0 = portfolioState(flatPositions(db), prices).total + getCash(db);
@@ -149,14 +150,14 @@ export async function runSweep(db, { force = false } = {}) {
 
   if (orders.length === 0) {
     const holdTrigger = state.killed ? "killed" : risk.breaker ? "risk" : "hold";
-    logDecision(db, { ts: Date.now(), window: state.window, hash: "-", sentinel: "VIGIL-hold", trigger: holdTrigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: [], mode: EXECUTION_MODE });
+    logDecision(db, { ts: Date.now(), window: state.window, hash: "-", sentinel: "VIGIL-hold", trigger: holdTrigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: [], mode });
     setAgentState(db, { nav_micro: state.peak, cash_micro: state.cash, drawdown: state.drawdown, status: state.killed ? "killed" : "held", last_run_ts: Date.now() });
     logEquity(db, Date.now(), navMicro, BigInt(Math.round(state.cash)));
     agentBus.emit("event", { type: "decision", window: state.window, trigger: holdTrigger, llm: llm.mode, navMicro: state.nav.toString() });
     return { decision: holdTrigger, nav: state.nav, window: state.window, seeded };
   }
 
-  const res = await executeOrders(db, { orders, trigger, rationale, window: state.window, model: modelLabel, llm: llm.mode, prices, navMicro, context });
+  const res = await executeOrders(db, { orders, trigger, rationale, window: state.window, model: modelLabel, llm: llm.mode, prices, navMicro, context, venue, execMode: mode });
   logDecision(db, { ts: Date.now(), window: state.window, hash: res.manifest.hash, sentinel: res.manifest.sentinel, trigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: res.executed, mode: res.mode });
   setAgentState(db, { nav_micro: state.peak, cash_micro: getCash(db), drawdown: state.drawdown, status: risk.breaker ? "breaker" : "traded", last_run_ts: Date.now(), nonce: res.nonce, breaker_tripped: risk.breaker ? 1 : 0 });
   logEquity(db, Date.now(), navMicro, getCash(db));

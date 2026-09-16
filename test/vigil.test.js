@@ -214,3 +214,29 @@ test("venue size helpers convert micro-units to venue decimal strings", () => {
   const base = toSizeBase(1_000_000_000n, 500_000_000n); // 1 token @ $500
   assert.ok(Math.abs(Number(base) - 2) < 0.000001, `base=$base`);
 });
+
+// --- SESSIONS (multi-user Connect) ---
+import { encryptCreds, decryptCreds, SessionError } from "../src/sessions.js";
+import { probeDemoKey } from "../src/venue.js";
+
+test("session creds encrypt/decrypt round-trips (AES-256-GCM)", () => {
+  const creds = { apiKey: "bg_test", secret: "s3cret", passphrase: "phrase123" };
+  const enc = encryptCreds(creds);
+  assert.equal(enc.startsWith("v1:"), true);
+  assert.equal(enc.includes("bg_test"), false, "plaintext must not be stored");
+  const dec = decryptCreds(enc);
+  assert.deepEqual(dec, creds);
+});
+
+test("session creds reject tampered payloads", () => {
+  const enc = encryptCreds({ apiKey: "a", secret: "b", passphrase: "c" });
+  const parts = enc.split(":");
+  parts[2] = Buffer.from("tampered").toString("base64");
+  assert.throws(() => decryptCreds(parts.join(":")), SessionError);
+});
+
+test("probeDemoKey rejects missing creds cleanly", async () => {
+  const r = await probeDemoKey({});
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /missing/i);
+});

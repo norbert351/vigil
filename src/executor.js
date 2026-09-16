@@ -8,7 +8,7 @@
 import { getPositions, setPosition, getCash, setCash, addRealized } from "./db.js";
 import { signManifest, decisionId } from "./engine.js";
 import { EXECUTION_MODE, QTY_SCALE, FEE_BPS, SLIPPAGE_BPS } from "./config.js";
-import { venueConfigured, venueSymbol, getBalances, usdtAvailable, placeMarketOrder, getOrderInfo, waitForFill, toSizeUsd, toSizeBase, venueTradable, floorTo, roundTo } from "./venue.js";
+import { defaultVenue, venueSymbol } from "./venue.js";
 
 const FEE = BigInt(FEE_BPS);        // bps
 const SLIP = BigInt(SLIPPAGE_BPS);  // bps
@@ -20,8 +20,9 @@ const TENK = 10_000n;
 // Re-sync the local ledger to venue truth: positions from actual holdings,
 // cash = USDT available. Called before decisions in bitget mode (the venue IS
 // the account — no paper seed) and after execution.
-export async function syncLedgerFromVenue(db, prices) {
-  const bal = await getBalances();
+export async function syncLedgerFromVenue(db, prices, venue) {
+  const v = venue || defaultVenue;
+  const bal = await v.getBalances();
   const map = {};
   for (const key of Object.keys(prices || {})) {
     const sym = venueSymbol(key);
@@ -41,7 +42,7 @@ export async function syncLedgerFromVenue(db, prices) {
     if (!map[r.key]) setPosition(db, r.key, 0n, null);
   }
   for (const [k, v] of Object.entries(map)) if (v.qty > 0n) setPosition(db, k, v.qty, v.avgCost);
-  const usdt = await usdtAvailable();
+  const usdt = await v.usdtAvailable();
   setCash(db, BigInt(Math.round(usdt * 1e6)));
   return map;
 }
@@ -119,10 +120,12 @@ function paperFillOne(o, prices, wallet) {
   return null;
 }
 
-async function executeOnVenue(db, { orders, prices }) {
+async function executeOnVenue(db, { orders, prices, venue }) {
+  const v = venue || defaultVenue;
+  const { getBalances, usdtAvailable, placeMarketOrder, waitForFill, toSizeUsd, toSizeBase, venueTradable, floorTo, roundTo } = v;
   const executed = [];
-  if (!venueConfigured()) {
-    throw new Error("VIGIL_EXEC=bitget but venue creds missing (VIGIL_BITGET_API_KEY/SECRET/PASSPHRASE)");
+  if (!v.configured()) {
+    throw new Error("venue execution requested but venue creds missing for this client");
   }
   // wallet = local ledger view; venue-supported fills are overwritten from venue truth after the batch
   const wallet = { pos: getPositions(db), cash: getCash(db) };
@@ -239,11 +242,12 @@ async function executeOnVenue(db, { orders, prices }) {
   return { executed, venueFilled, paperFilled };
 }
 
-export async function executeOrders(db, { orders, trigger, rationale, window, model, llm, prices, navMicro, context }) {
-  const isVenue = EXECUTION_MODE === "bitget";
+export async function executeOrders(db, { orders, trigger, rationale, window, model, llm, prices, navMicro, context, venue, execMode }) {
+  const mode = execMode || EXECUTION_MODE;
+  const isVenue = mode === "bitget";
   let executed;
   if (isVenue) {
-    const r = await executeOnVenue(db, { orders, prices });
+    const r = await executeOnVenue(db, { orders, prices, venue });
     executed = r.executed;
     globalThis.__vigilVenueStats = { venueFilled: r.venueFilled, paperFilled: r.paperFilled };
   } else {
@@ -252,7 +256,7 @@ export async function executeOrders(db, { orders, trigger, rationale, window, mo
 
   const nonce = decisionId(db);
   const manifest = signManifest({ window, nonce, ts: Date.now(), navMicro, trigger, prices, orders: executed, model, llm, context });
-  return { executed, manifest, nonce, mode: EXECUTION_MODE };
+  return { executed, manifest, nonce, mode };
 }
 
 // ---- paper route (default) ----
