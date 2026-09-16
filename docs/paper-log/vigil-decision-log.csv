@@ -334,3 +334,5 @@ seq,ts,window,trigger,llm,nav_micro,rationale,orders,review_verdict,review_ratio
 741,1789599863559,day,hold,stub,9594654471,"Neutral regime: no edge; deliberately holding (no overtrading).","[]","pass","Deterministic audit: plan respects breaker, cash and concentration bounds."
 742,1789599923604,day,rebalance,live,9596567293,"Risk layer passed (day, F&G=n/a): 2 order(s), caps 35%/crypto 45%/rToken 85%.","[]","reject","reviewer unavailable (review http 429) — fail-closed"
 743,1789599977611,day,rebalance,live,9597495526,"Risk layer passed (day, F&G=n/a): 2 order(s), caps 35%/crypto 45%/rToken 85%.","[]","reject","reviewer unavailable (review http 429) — fail-closed"
+744,1789600147439,day,rebalance,live,9598031555,"Risk layer passed (day, F&G=n/a): 2 order(s), caps 35%/crypto 45%/rToken 85%.","[]","reject","reviewer unavailable (review http 429) — fail-closed"
+745,1789600227272,day,rebalance,live,9598536341,"Risk layer passed (day, F&G=n/a): 2 order(s), caps 35%/crypto 45%/rToken 85%.","[]","pass","Deterministic audit: plan respects breaker, cash and concentration bounds. — deterministic fallback (LLM reviewer review http 429)"

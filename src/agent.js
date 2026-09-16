@@ -156,7 +156,8 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, ll
       const fullPlan = [...llmOrders, ...risk.orders]; // union: the auditor sees every proposed leg
       try {
         review = await llm.review({ state, decision: { orders: fullPlan } });
-        review = { verdict: String(review?.verdict || "reject").toLowerCase() === "pass" ? "pass" : "reject", reason: String(review?.reason || "") };
+        const fb = review?.fallback ? ` — deterministic fallback (LLM reviewer ${review.fallbackReason || "unavailable"})` : "";
+        review = { verdict: String(review?.verdict || "reject").toLowerCase() === "pass" ? "pass" : "reject", reason: String(review?.reason || "") + fb, fallback: !!(review?.fallback) };
         orders = review.verdict === "reject" ? [...risk.orders] : merged; // reject → drop all discretionary
       } catch (e) {
         // fail-closed: reviewer unavailable → withhold discretionary legs, keep risk harness

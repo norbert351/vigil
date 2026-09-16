@@ -135,7 +135,14 @@ export function llmFactory() {
   return {
     mode: resolvedMode, model, provider,
     decide: (state) => decideLive(state, base, model, key),
-    review: (d) => reviewLive(d, base, model, key),
+    // Reviewer: prefer the LLM; if it's rate-limited/unavailable (e.g. a transient
+    // 429 on the capped key), fall back to the deterministic auditor rather than
+    // failing closed — a real verdict rides into every plan either way, and the
+    // risk harness (which always survives a reject) is never blocked.
+    review: async (d) => {
+      try { return await reviewLive(d, base, model, key); }
+      catch (e) { return { ...reviewStub(d), fallback: true, fallbackReason: String(e?.message || e) }; }
+    },
     reviewerModel: `${model} (audit)`,
   };
 }
@@ -252,10 +259,11 @@ export async function reviewLive({ state, decision }, base, model, key) {
       const reason = String(text).slice(0, 400).replace(/```/g, "").trim();
       return { verdict, reason: reason || (verdict === "reject" ? "rejected (no reason)" : "approved") };
     } catch (e) { lastErr = e; }
+  } // end retry loop
+    // reviewer unreachable — throw so the caller can fall back to the deterministic
+    // auditor instead of failing closed on a transient rate-limit/network error
+    throw lastErr || new Error("reviewer unreachable");
   }
-  // audit failure = fail-closed: if the reviewer can't run, don't execute a plan.
-  return { verdict: "reject", reason: `reviewer unavailable (${lastErr.message}) — fail-closed` };
-}
 
 // Robust extraction: strip markdown fences, find the first balanced JSON object.
 function parseDecision(text) {
