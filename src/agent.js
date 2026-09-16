@@ -139,26 +139,33 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, ll
     } catch (e) { llmDecision = null; }
   }
 
-  // TWO-MODEL AUDIT: a second reviewer criticizes the discretionary plan before
-  // execution. On reject → drop the LLM's orders (risk layer orders always survive);
-  // the verdict + reason ride into the signed decision log.
-  let review = null;
-  if (llmDecision && ((llmDecision.orders || []).length > 0) && !risk.breaker && !state.killed) {
-    try {
-      review = await llm.review({ state, decision: llmDecision });
-      review = { verdict: String(review?.verdict || "reject").toLowerCase() === "pass" ? "pass" : "reject", reason: String(review?.reason || "") };
-      if (review.verdict === "reject") {
-        llmDecision = { ...llmDecision, orders: [], rejectedReason: review.reason };
-      }
-    } catch (e) { review = null; }
-  }
-
+  // TWO-MODEL AUDIT: a second (adversarial) reviewer criticizes the COMPLETE proposed
+  // plan — risk-layer AND LLM legs — before execution. A rejection drops ALL of the
+  // LLM's discretionary legs (the risk harness orders always survive; they are the
+  // mechanical, cap-enforced layer). The verdict + reason ride into every signed
+  // decision, so every real execution is independently audited.
+  // Fail-closed: if the reviewer cannot produce a verdict, discretionary legs are withheld.
   let orders;
+  let review = null;
   if (risk.breaker || state.killed) {
-    orders = risk.orders; // breaker liquidation / kill = halt
+    orders = risk.orders; // breaker liquidation / kill = halt, no audit needed
   } else {
     const llmOrders = (llmDecision?.orders || []).map((o) => ({ action: o.action, key: o.key, usdMicro: Math.round(Number(o.usdMicro || 0)), reason: "llm-" + (o.action || "hold") })).filter((o) => o.usdMicro >= 100_000);
-    orders = mergeOrders(risk.orders, llmOrders, state);
+    const merged = mergeOrders(risk.orders, llmOrders, state);
+    if (merged.length > 0) {
+      const fullPlan = [...llmOrders, ...risk.orders]; // union: the auditor sees every proposed leg
+      try {
+        review = await llm.review({ state, decision: { orders: fullPlan } });
+        review = { verdict: String(review?.verdict || "reject").toLowerCase() === "pass" ? "pass" : "reject", reason: String(review?.reason || "") };
+        orders = review.verdict === "reject" ? [...risk.orders] : merged; // reject → drop all discretionary
+      } catch (e) {
+        // fail-closed: reviewer unavailable → withhold discretionary legs, keep risk harness
+        orders = [...risk.orders];
+        review = { verdict: "reject", reason: `reviewer unavailable (${e.message}) — fail-closed`, unavailable: true };
+      }
+    } else {
+      orders = merged;
+    }
   }
 
   const context = decisionContext(state, perception);
@@ -168,8 +175,8 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, ll
 
   if (orders.length === 0) {
     const holdTrigger = state.killed ? "killed" : risk.breaker ? "risk" : "hold";
-    const auditNote = review && review.verdict === "reject" && llmDecision?.rejectedReason
-      ? `Auditor rejected the proposal: ${llmDecision.rejectedReason}`
+    const auditNote = review && review.verdict === "reject" && review.reason
+      ? `Auditor rejected the plan: ${review.reason}${review.unavailable ? " (reviewer unavailable — fail-closed)" : ""}`
       : null;
     logDecision(db, {
       ts: Date.now(), window: state.window, hash: "-", sentinel: "VIGIL-hold", trigger: holdTrigger, model: modelLabel, llm: llm.mode, navMicro,

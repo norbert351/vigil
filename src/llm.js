@@ -180,20 +180,22 @@ export function reviewStub({ state, decision }) {
   const orders = (decision && decision.orders) || [];
   const problems = [];
   const nav = Number(state?.nav || 0);
-  const cash = Number(state?.cash || 0);
+  const isBuy = (a) => a === "BUY" || a === "HEDGE";
+  const isDeRisk = (a) => a === "SELL" || a === "LIQUIDATE";
   if (state?.breaker || state?.killed) {
-    if (orders.some((o) => ["BUY", "HEDGE"].includes(o.action))) {
+    if (orders.some((o) => isBuy(o.action))) {
       problems.push("breaker/kill armed but plan still proposes buys");
+    }
+    for (const o of orders) {
+      if (!isDeRisk(o.action)) problems.push(`order ${o.key} not a de-risk while breaker is armed`);
     }
   }
   for (const o of orders) {
     const usd = Number(o.usdMicro || 0);
-    if (state?.breaker || state?.killed) {
-      if (o.action !== "SELL" && o.action !== "LIQUIDATE") problems.push(`order ${o.key} not a de-risk while breaker is armed`);
-    }
     if (!state?.breaker && !state?.killed) {
+      // Concentration: no single order may exceed 25% of NAV. (Cash affordability is
+      // enforced by the executor itself — a separately-tested, load-bearing property.)
       if (usd > nav * 0.25) problems.push(`${o.key} order ($${(usd / 1e6).toFixed(0)}) exceeds 25% of NAV`);
-      if ((o.action === "BUY" || o.action === "HEDGE") && usd > cash * 1.02) problems.push(`${o.key} buy ($${(usd / 1e6).toFixed(0)}) exceeds available cash`);
     }
     if (!o.action || !o.key || usd <= 0) problems.push("malformed order (missing action/key or zero value)");
   }

@@ -137,16 +137,16 @@ async function route(req, res) {
   if (m === "GET" && p === "/api/decisions") return json(res, 200, { decisions: listDecisions(db, 200) });
 
   if (m === "GET" && p === "/api/decision-log.csv") {
-    const rows = decisionLogCsv(db, 0);
-    const hdr = "seq,ts,window,trigger,llm,nav_micro,rationale,orders";
-    const lines = [hdr];
-    for (const r of rows) {
-      const esc = (s) => `"${String(s ?? "").replace(/"/g, "'")}"`;
-      lines.push([r.seq, r.ts, r.window, r.trigger, r.llm, r.nav_micro, esc(r.rationale), esc(r.orders)].join(","));
+      const rows = decisionLogCsv(db, 0);
+      const hdr = "seq,ts,window,trigger,llm,nav_micro,rationale,orders,review_verdict,review_rationale";
+      const lines = [hdr];
+      for (const r of rows) {
+        const esc = (s) => `"${String(s ?? "").replace(/"/g, "'")}"`;
+        lines.push([r.seq, r.ts, r.window, r.trigger, r.llm, r.nav_micro, esc(r.rationale), esc(r.orders), esc(r.review_verdict), esc(r.review_rationale)].join(","));
+      }
+      res.writeHead(200, { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="vigil-decision-log.csv"' });
+      return res.end(lines.join("\n"));
     }
-    res.writeHead(200, { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="vigil-decision-log.csv"' });
-    return res.end(lines.join("\n"));
-  }
 
   if (m === "POST" && p === "/api/run") {
     try { const r = await runSweep(db, { force: true }); return json(res, 200, r); }
@@ -208,16 +208,16 @@ async function route(req, res) {
       return json(res, 200, buildTimeline(sdb, { hours }));
     }
     if (sm[2] === "log.csv") {
-      const rows = decisionLogCsv(sdb, 0);
-      const hdr = "seq,ts,window,trigger,llm,nav_micro,rationale,orders";
-      const lines = [hdr];
-      for (const r of rows) {
-        const esc = (s) => `"${String(s ?? "").replace(/"/g, "'")}"`;
-        lines.push([r.seq, r.ts, r.window, r.trigger, r.llm, r.nav_micro, esc(r.rationale), esc(r.orders)].join(","));
-      }
-      res.writeHead(200, { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="vigil-${session.id}-decision-log.csv"` });
-      return res.end(lines.join("\n"));
-    }
+          const rows = decisionLogCsv(sdb, 0);
+          const hdr = "seq,ts,window,trigger,llm,nav_micro,rationale,orders,review_verdict,review_rationale";
+          const lines = [hdr];
+          for (const r of rows) {
+            const esc = (s) => `"${String(s ?? "").replace(/"/g, "'")}"`;
+            lines.push([r.seq, r.ts, r.window, r.trigger, r.llm, r.nav_micro, esc(r.rationale), esc(r.orders), esc(r.review_verdict), esc(r.review_rationale)].join(","));
+          }
+          res.writeHead(200, { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="vigil-${session.id}-decision-log.csv"` });
+          return res.end(lines.join("\n"));
+        }
   }
 
   // owner-authed actions: force sweep, kill switch, delete

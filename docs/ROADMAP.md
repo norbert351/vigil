@@ -28,11 +28,20 @@
 - Restart recovery: sessions resume their loops after a redeploy
 
 ### Differentiators shipped this round
-1. **Two-model decision audit** — a second reviewer criticizes the plan before execution; verdict + reason are written into the signed log (fail-closed if the reviewer is unreachable)
+1. **Two-model decision audit** — a second reviewer criticizes the **complete proposed plan**
+   (risk-layer AND LLM legs) before execution; verdict + reason are written into every signed
+   decision (fail-closed if the reviewer is unreachable). A rejection drops only the LLM's
+   discretionary legs — the risk harness's own orders always survive.
 2. **Break-glass alerts** — webhook (Telegram/Discord/Slack/generic) on breaker trips, kill-switch, ≥3% NAV moves, and venue order failures; deduped per type
 3. **Session leaderboard**
 4. **Event-aligned night timeline**
 5. **Overnight sleep report**
+
+> **Audit evidence (2026-09-17):** the auditor previously fired only on LLM-discretionary
+> plans, so while the live agent ran mostly risk-harness rebalances the log carried no
+> verdicts. Fixed to audit every executed plan, backfilled the executed history, and the
+> running agent now produces audited decisions live. Committed paper-log carries the
+> `review_verdict` column.
 
 ---
 

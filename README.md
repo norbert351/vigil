@@ -137,11 +137,16 @@ equity-curve analytics, decision log, stub policy).
 
 ## Two-model decision audit
 
-The decision-maker proposes; a **second reviewer** criticises the plan before execution and its
-verdict is signed into the log (`review_verdict` / `review_rationale`). Rejections drop the
-discretionary orders (the risk layer's own orders always survive). If the reviewer cannot run,
-the plan is rejected — **fail-closed**. UI shows `✓ audit pass` / `✗ audit reject` per decision,
-and `/night` + `/reports/latest` surface rejections with the auditor's reasoning.
+The decision-maker proposes; a **second reviewer** criticises the complete plan (risk-layer
+and LLM legs) before execution and its verdict is signed into the log (`review_verdict` /
+`review_rationale`). A **rejection drops only the LLM's discretionary orders** — the risk
+harness's own orders always survive, so de-risking is never blocked. If the reviewer cannot
+run, the discretionary plan is withheld — **fail-closed**. The auditor watches what the
+executor does **not** (over-concentration >25% NAV, breaker-fighting, malformed orders);
+cash-affordability is enforced by the executor's own cash-correct settlement. UI shows
+`✓ audit pass` / `✗ audit reject` per decision, and `/night` + `/reports/latest` surface
+rejections with the auditor's reasoning. The committed paper-log carries a `review_verdict`
+column, so the audit is verifiable offline too.
 
 ## Break-glass alerts
 

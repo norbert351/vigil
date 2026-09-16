@@ -179,6 +179,7 @@ export function tradeRows(db) {
 export function decisionLogCsv(db, sinceTs = 0) {
   const rows = db.prepare(
     "SELECT d.seq, d.ts, d.window, d.trigger, d.llm, d.nav_micro, d.rationale, " +
+    "COALESCE(d.review_verdict,'') AS review_verdict, COALESCE(d.review_rationale,'') AS review_rationale, " +
     "COALESCE(d.context_json, '') AS context_json, " +
     "(SELECT json_group_array(json_object('action',o.action,'key',o.key,'usd',o.usd_micro,'px',o.px_micro,'pnl',o.pnl_micro,'fee',o.fee_micro)) FROM orders o WHERE o.decision_seq=d.seq) AS orders " +
     "FROM decisions d WHERE d.ts >= ? ORDER BY d.seq ASC"

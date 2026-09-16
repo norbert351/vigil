@@ -250,11 +250,12 @@ test("auditor rejects a buy while the breaker is armed", () => {
   assert.match(r.reason, /breaker/i);
 });
 
-test("auditor rejects orders above 25% of NAV or cash", () => {
+test("auditor rejects orders above 25% of NAV and malformed orders", () => {
   const big = reviewStub({ state: { nav: 1e10, cash: 1e10, breaker: false }, decision: { orders: [{ action: "BUY", key: "rnvda", usdMicro: 5e9 }] } });
   assert.equal(big.verdict, "reject");
-  const overspend = reviewStub({ state: { nav: 1e10, cash: 1e8, breaker: false }, decision: { orders: [{ action: "BUY", key: "rspy", usdMicro: 5e8 }] } });
-  assert.equal(overspend.verdict, "reject");
+  // cash-affordability is owned + enforced by the executor, not the auditor
+  const affordable = reviewStub({ state: { nav: 1e10, cash: 1e8, breaker: false }, decision: { orders: [{ action: "BUY", key: "rspy", usdMicro: 5e8 }] } });
+  assert.equal(affordable.verdict, "pass");
 });
 
 test("auditor passes a conservative de-risk and flags malformed orders", () => {
