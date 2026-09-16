@@ -36,3 +36,16 @@ services:
         value: "10000"
       - key: VIGIL_SCAN_MS
         value: "300000"
+      # Multi-session Connect: 32+ char random string used to encrypt user books'
+      # credentials (AES-256-GCM). WITHOUT this, session keys are ephemeral and
+      # connected books become undecryptable after a redeploy — set it in the dashboard.
+      - key: VIGIL_SESSION_SECRET
+        sync: false
+      - key: VIGIL_MAX_SESSIONS
+        value: "8"
+      # Optional global break-glass webhook (Telegram/Discord/Slack/generic).
+      # Per-book webhooks are supplied by users at Connect instead.
+      - key: VIGIL_ALERT_WEBHOOK
+        sync: false
+      - key: VIGIL_ALERT_MOVE_PCT
+        value: "3"

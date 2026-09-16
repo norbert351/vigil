@@ -201,7 +201,8 @@ footer{border-top:1px solid var(--line);padding:36px 0;font-size:13px;color:var(
     <nav class="nav-links" id="navlinks">
       <a href="/#how">How it works</a>
       <a href="/#proof">Proof</a>
-      <a href="/#stack">Stack</a>
+      <a href="/night">Night timeline</a>
+      <a href="/leaderboard">Leaderboard</a>
       <a href="/app">Live agent</a>
       <a href="/api/decision-log.csv" target="_blank" rel="noopener">Decision log</a>
     </nav>
@@ -323,10 +324,16 @@ footer{border-top:1px solid var(--line);padding:36px 0;font-size:13px;color:var(
     <div class="proof-grid">
       <a class="proof reveal" href="/app" style="display:flex">
         <div class="pbg"><img src="/images/charts-analysis.webp" alt="Financial charts with trend lines" loading="lazy"/></div>
-        <div class="pex">Live dashboard</div>
-        <h3>Watch the agent run</h3>
-        <p>NAV, holdings, signed decisions, live SSE stream — the current book, right now.</p>
-      </a>
+            <div class="pex">Live dashboard</div>
+            <h3>Watch the agent run</h3>
+            <p>NAV, holdings, signed decisions, live SSE stream — the current book, right now.</p>
+          </a>
+          <a class="proof reveal" href="/night" style="display:flex">
+            <div class="pbg"><img src="/images/hero-night-city.webp" alt="City skyline at night" loading="lazy"/></div>
+            <div class="pex">Event → decision</div>
+            <h3>Night timeline</h3>
+            <p>Every headline it saw and every fill it made, on one time axis with the NAV curve.</p>
+          </a>
       <a class="proof reveal" href="/api/decision-log.csv" target="_blank" rel="noopener" style="display:flex">
         <div class="pbg"><img src="/images/desk-trading.webp" alt="Trading screens at night" loading="lazy"/></div>
         <div class="pex">CSV · open format</div>

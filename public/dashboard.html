@@ -48,6 +48,8 @@ header{position:sticky;top:0;z-index:50;background:rgba(7,15,29,.85);backdrop-fi
 .pill .d{width:7px;height:7px;border-radius:50%;background:var(--up);animation:pulse 2.2s infinite}
 .pill.warn .d{background:#FFB84D}
 .pill.bad .d{background:var(--down);animation:none}
+.pill.bad{background:rgba(255,107,107,.1);border-color:rgba(255,107,107,.4);color:#FFB4B4}
+.pill.good{background:rgba(61,214,140,.1);border-color:rgba(61,214,140,.35);color:#9BE8C4}
 
 /* KPI grid */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin:22px 0}
@@ -132,7 +134,8 @@ td .sub{display:block;font-size:11px;color:var(--mut);font-family:var(--mono)}
     </a>
     <nav class="nav-l">
       <a href="/#how">How it works</a>
-      <a href="/#proof">Proof</a>
+      <a href="/night">Night timeline</a>
+      <a href="/leaderboard">Leaderboard</a>
       <a href="/api/decision-log.csv" target="_blank" rel="noopener">Decision log</a>
     </nav>
     <div class="nav-r">
@@ -271,11 +274,14 @@ td .sub{display:block;font-size:11px;color:var(--mut);font-family:var(--mono)}
   }
 
   function renderDecisions(d){
-    if(!d || !d.decisions || !d.decisions.length){ $('decisions').innerHTML = '<tr><th>#</th><th>Win</th><th>Trigger</th><th>LLM</th><th>NAV</th><th>Sentinel</th></tr><tr><td colspan="6"><div class="empty">no decisions yet</div></td></tr>'; return; }
+    if(!d || !d.decisions || !d.decisions.length){ $('decisions').innerHTML = '<tr><th>#</th><th>Win</th><th>Trigger</th><th>LLM</th><th>NAV</th><th>Audit</th><th>Sentinel</th></tr><tr><td colspan="7"><div class="empty">no decisions yet</div></td></tr>'; return; }
     var rows = d.decisions.slice(0,12).map(function(x){
-      return '<tr><td class="mono">'+x.seq+'</td><td><span class="pill">'+x.window+'</span></td><td>'+x.trigger+'</td><td class="mono">'+(x.llm||'—')+'</td><td class="mono">'+U(Number(x.nav_micro||0)/1e6)+'</td><td><span class="sent-row"><span class="dotline"></span><span class="sig">'+String(x.sentinel||'').slice(0,20)+'</span></span></td></tr>';
+      var audit = x.review_verdict
+        ? '<span class="pill '+(x.review_verdict==='reject'?'bad':'good')+'" title="'+(String(x.review_rationale||'').replace(/"/g,'&quot;'))+'">'+(x.review_verdict==='reject'?'✗ audit reject':'✓ audit pass')+'</span>'
+        : '<span class="mono" style="color:#5A7398">—</span>';
+      return '<tr><td class="mono">'+x.seq+'</td><td><span class="pill">'+x.window+'</span></td><td>'+x.trigger+'</td><td class="mono">'+(x.llm||'—')+'</td><td class="mono">'+U(Number(x.nav_micro||0)/1e6)+'</td><td>'+audit+'</td><td><span class="sent-row"><span class="dotline"></span><span class="sig">'+String(x.sentinel||'').slice(0,20)+'</span></span></td></tr>';
     }).join('');
-    $('decisions').innerHTML = '<tr><th>#</th><th>Win</th><th>Trigger</th><th>LLM</th><th>NAV</th><th>Sentinel</th></tr>' + rows;
+    $('decisions').innerHTML = '<tr><th>#</th><th>Win</th><th>Trigger</th><th>LLM</th><th>NAV</th><th>Audit</th><th>Sentinel</th></tr>' + rows;
   }
 
   /* SSE feed — flagship stream for /app; session polls its OWN decisions */

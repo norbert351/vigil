@@ -222,6 +222,7 @@ async function executeOnVenue(db, { orders, prices, venue }) {
     const p = wallet.pos[key];
     if (p) setPosition(db, key, p.qty, p.avgCost);
   }
+  const venueErrors = executed.filter((e) => e.error).length;
   // Re-sync venue-traded holdings + cash to venue truth, then apply the paper-leg cash delta.
   try {
     const bal = await getBalances();
@@ -239,7 +240,7 @@ async function executeOnVenue(db, { orders, prices, venue }) {
     const paperDelta = wallet.cash - startCash; // cash effect of simulated legs
     setCash(db, BigInt(Math.round(usdt * 1e6)) + paperDelta);
   } catch (e) { /* ledger sync non-fatal */ }
-  return { executed, venueFilled, paperFilled };
+  return { executed, venueFilled, paperFilled, venueErrors };
 }
 
 export async function executeOrders(db, { orders, trigger, rationale, window, model, llm, prices, navMicro, context, venue, execMode }) {
@@ -249,7 +250,7 @@ export async function executeOrders(db, { orders, trigger, rationale, window, mo
   if (isVenue) {
     const r = await executeOnVenue(db, { orders, prices, venue });
     executed = r.executed;
-    globalThis.__vigilVenueStats = { venueFilled: r.venueFilled, paperFilled: r.paperFilled };
+    globalThis.__vigilVenueStats = { venueFilled: r.venueFilled, paperFilled: r.paperFilled, venueErrors: r.venueErrors || 0 };
   } else {
     executed = executePaper(db, { orders, prices });
   }

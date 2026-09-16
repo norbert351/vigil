@@ -16,6 +16,7 @@ import { openDB, setKill } from "./db.js";
 import { runSweep } from "./agent.js";
 import { createVenueClient, probeDemoKey, venueSymbol } from "./venue.js";
 import { getPositions, getCash } from "./db.js";
+import { alertRows as getAlerts } from "./db.js";
 import { portfolioState } from "./engine.js";
 import { refreshPrices } from "./market.js";
 
@@ -119,22 +120,50 @@ function rateAllowed(ip) {
 
 function sweepLoop(id, db, venue, mode) {
   const timer = setInterval(async () => {
-    try { await runSweep(db, { venue, execMode: mode }); }
-    catch (e) { console.error(`[session ${id}] sweep`, e.message); }
+    try {
+      let webhook = null;
+      try { webhook = decryptCreds(registry.sessions[id].creds).webhook || null; } catch { /* ignore */ }
+      await runSweep(db, { venue, execMode: mode, webhook });
+    } catch (e) { console.error(`[session ${id}] sweep`, e.message); }
   }, Number(process.env.VIGIL_SCAN_MS || 300_000));
   timer.unref?.();
   return timer;
 }
 
+// Validate an alert webhook URL (Telegram/Discord/Slack/generic https).
+function cleanWebhook(url) {
+  if (!url) return null;
+  const s = String(url).trim();
+  if (!/^https:\/\//i.test(s)) throw new SessionError("BAD_WEBHOOK", "webhook must be an https:// URL");
+  return s.slice(0, 500);
+}
+
 // Create a session from a user-supplied Bitget key. Hard gate: demo keys only.
-export async function createSession({ apiKey, secret, passphrase, name, ip }) {
+export async function createSession({ apiKey, secret, passphrase, name, ip, webhook }) {
   if (!apiKey || !secret || !passphrase) throw new SessionError("MISSING", "apiKey, secret and passphrase are all required");
   if (Object.keys(registry.sessions).length >= MAX_SESSIONS) throw new SessionError("FULL", `instance is at capacity (${MAX_SESSIONS} sessions)`);
   if (ip && !rateAllowed(ip)) throw new SessionError("RATE", "too many sessions from this address today — try again tomorrow");
+  const hook = cleanWebhook(webhook);
 
   const probe = await probeDemoKey({ apiKey, secret, passphrase });
   if (!probe.ok) throw new SessionError("REJECTED", probe.reason);
   if (probe.live) throw new SessionError("LIVE_KEY", "live-account keys are not accepted — VIGIL Connect takes demo/paper keys only");
+
+  // One account = one agent. Two books trading the same Bitget account fight over the
+  // same balances and both ledgers inflate (each syncs the other's fills). Reject the
+  // server's own env key and any key already bound to another live session.
+  const envKey = process.env.VIGIL_BITGET_API_KEY;
+  if (envKey && apiKey === envKey) {
+    throw new SessionError("IN_USE", "that key already runs the VIGIL flagship agent — create a separate demo key for your own book");
+  }
+  for (const s of Object.values(registry.sessions)) {
+    try {
+      const existing = decryptCreds(s.creds);
+      if (existing.apiKey === apiKey) {
+        throw new SessionError("IN_USE", "that key is already connected to another book");
+      }
+    } catch (e) { if (e instanceof SessionError) throw e; /* corrupt session — ignore */ }
+  }
 
   // user's spot balance (informational; the sweep re-syncs truth anyway)
   let usdt = 0;
@@ -148,8 +177,8 @@ export async function createSession({ apiKey, secret, passphrase, name, ip }) {
   registry.sessions[id] = {
     id, name: String(name || "My book").slice(0, 40),
     ownerHash: hashOwner(ownerKey),
-    creds: encryptCreds({ apiKey, secret, passphrase }),
-    createdAt: Date.now(), status: "active", usdt, currency: "USDT",
+    creds: encryptCreds({ apiKey, secret, passphrase, webhook: hook }),
+    createdAt: Date.now(), status: "active", usdt, currency: "USDT", hasWebhook: !!hook,
   };
   saveRegistry(registry);
 
@@ -158,11 +187,16 @@ export async function createSession({ apiKey, secret, passphrase, name, ip }) {
   const client = createVenueClient({ apiKey, secret, passphrase });
   loops.set(id, { timer: sweepLoop(id, db, client, "bitget"), db });
   // immediate warm sweep so the dashboard has data + the venue truth is synced
-  runSweep(db, { venue: client, execMode: "bitget" })
+  runSweep(db, { venue: client, execMode: "bitget", webhook: hook })
     .then((r) => console.log(`[session ${id}] warm sweep:`, JSON.stringify(r).slice(0, 160)))
     .catch((e) => console.error(`[session ${id}] warm`, e.message));
 
-  return { id, name: registry.sessions[id].name, ownerKey, usdt };
+  return { id, name: registry.sessions[id].name, ownerKey, usdt, hasWebhook: !!hook };
+}
+
+// Alerts recorded for a session (break-glass history).
+export function sessionAlerts(id, limit = 50) {
+  try { return getAlerts(sessionDb(id), limit); } catch { return []; }
 }
 
 // Legacy sessions (server restart): restart loops for active sessions.

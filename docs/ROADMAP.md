@@ -7,66 +7,60 @@
 
 ## ✅ Shipped
 
+### Core agent
 - **Live LLM decision-maker** — Gemini via OpenAI-compatible seam; Qwen sponsor swap one-var (`VIGIL_LLM=qwen`)
-- **Real venue execution** — signed UTA v3 spot orders on Bitget's paper-trading env (`PAPTRADING:1`), ledger re-syncs to venue truth; verified fills (BTC/ETH)
+- **Real venue execution** — signed UTA v3 spot orders on Bitget's paper-trading env (`PAPTRADING:1`); verified fills (BTC/ETH)
 - **Capability-aware hybrid routing** — rTokens are halted in the demo venue → clearly-labelled `paper-fallback` legs, never faked as venue fills
 - **Risk harness** — night-mode + Fear-regime rotation, drawdown breaker (10% day / 5% night), kill-switch, order-size + concentration caps
 - **Signed decision log** — every cycle bound to {window, nonce, ts, nav, prices, orders} → `VIGIL-<sha256>`, replayable + committed CSV
-- **Full UI** — navy/light-blue landing (`/`), command center (`/app`), live ticker, SSE stream, 390px-clean, 22/22 tests
-- **Multi-session Connect flow** — BYO demo key → `/connect` → isolated book, encrypted-at-rest creds (AES-256-GCM), owner-key auth, per-book dashboard + metrics + decision log, restart-recovery, live-key rejection gate
 
-## 🔜 Next candidates (recommended order)
+### Surfaces
+- **Landing** (`/`) — navy/light-blue identity, Pexels night-city hero with text on image, live ticker, animated sections
+- **Command center** (`/app`) — KPIs, allocation, holdings, signed log with **audit verdicts**, SSE stream, kill-switch
+- **Connect** (`/connect`) — BYO demo-key onboarding: read-only validation, demo-only gate, encrypted at rest
+- **Leaderboard** (`/leaderboard`) — live ranking of every connected book
+- **Night timeline** (`/night`) — headlines + decisions + fills aligned with the NAV curve on one axis
+- **Sleep report** (`/reports/latest`) — auto-generated morning digest with LLM narration
 
-### 1. Two-model decision audit: "the LLM proposes, the LLM verifies"
-A second LLM call (same model, adversarial prompt) reviews the first decision *before*
-execution and returns PASS / REJECT + reasoning. Both survive in the signed log.
-- **Why unique:** every agent has a risk layer — almost none show a second *model*
-  critiquing the first. Turns "risk-gated decisions" from a claim into a visible,
-  judge-clickable artifact (rejected orders with reasons in the log).
-- **Effort:** ~1 day. New seam in `llm.js`, one log column, dashboard display.
-- **Gate:** rejected-order rate must be non-zero at demo time — run it on the live
-  book for 24–48h and show real rejections.
+### Multi-session platform
+- Isolated ledger + sweep loop per connected book; owner-key auth on every mutating route
+- AES-256-GCM credential storage, per-IP rate cap, 8-session capacity, **live-account keys rejected**, one-account-one-agent guard
+- Restart recovery: sessions resume their loops after a redeploy
 
-### 2. Overnight "sleep report" (auto-generated morning debrief)
-Every morning, VIGIL composes a dated HTML/PDF digest: what happened overnight, the
-news/macro it acted on, its trades, NAV move vs a do-nothing baseline, and a
-one-paragraph plain-language explanation. Committed to the repo + served at
-`/reports/latest`.
-- **Why unique:** the product *narrates* the hours humans slept back to them — the
-  thesis made tangible. Deeper storytelling than any live chart; ideal Demo Day prop.
-- **Effort:** ~1 day (template + LLM summarization + nightly cron).
-- **Gate:** must run a real overnight before submission.
+### Differentiators shipped this round
+1. **Two-model decision audit** — a second reviewer criticizes the plan before execution; verdict + reason are written into the signed log (fail-closed if the reviewer is unreachable)
+2. **Break-glass alerts** — webhook (Telegram/Discord/Slack/generic) on breaker trips, kill-switch, ≥3% NAV moves, and venue order failures; deduped per type
+3. **Session leaderboard**
+4. **Event-aligned night timeline**
+5. **Overnight sleep report**
 
-### 3. Session leaderboard (`/leaderboard`)
-Public ranking of all connected books by NAV return, Sharpe, max-DD and decision
-density — one row per session, "live" pulse, links to each book's page.
-- **Why unique:** the multi-session foundation already exists; a leaderboard turns a
-  single-tenant demo into a *community* — competitors + a reason to connect.
-- **Effort:** ½ day (query per-book metrics, sort, render).
-- **Gate:** needs ≥2-3 live sessions to look real; seed with the flagship + invite judges.
+---
 
-### 4. Break-glass alerts (Telegram/Discord webhook)
-Breaker trips, kill-switch events, drawdown >X%, or a >2σ venue move → instant
-notification with the signed decision hash. Owner-configurable per session.
-- **Why unique:** real overnight operation needs a phone that buzzes — "it's
-  watching" stops being a pitch and becomes a ping.
-- **Effort:** ½ day (webhook URL per session + event hook in the sweep loop).
+## 🔜 Next candidates
 
-### 5. Event-aligned night timeline (`/app?tab=night`)
-One visual timeline of the overnight window: macro/news timestamps (from the
-perception feed) overlaid with the agent's trades + NAV markers, so a judge sees the
-*why* at a glance (CPI at 2am → defensive rotation at 2:04).
-- **Why unique:** turns the signed log into a story; no other entry maps events →
-  decisions on one axis.
-- **Effort:** 1 day (merge decisions + perception timestamps, render).
-- **Gate:** needs an eventful night captured before judging.
+### 1. Audit analytics dashboard
+Rejection-rate over time, which rules fire most, and the counterfactual "what would the rejected plan have cost?" — turns the audit from a per-row verdict into evidence that the reviewer adds value.
+**Gate:** needs ≥20 audited decisions to be meaningful.
+
+### 2. Multi-venue execution (OKX / Hyperliquid)
+The venue client is already a factory (`createVenueClient`) — a second adapter would prove the architecture generalises beyond one exchange and hedge venue-specific halts.
+**Gate:** needs a second venue's demo credentials + symbol-capability map.
+
+### 3. Sleep-report email/push delivery
+Reports currently live at a URL; a scheduled delivery (email or the alert webhook) makes the product's ritual real — "wake up, read what your agent did".
+**Gate:** needs an email provider key or a user-supplied webhook.
+
+### 4. Strategy profiles per book
+Let a connected book pick a stance (defensive / balanced / momentum) that reshapes targets + caps, versioned in the signed log so a judge can compare behaviours side by side.
+**Gate:** needs a backtest comparison across profiles to show the difference is real.
+
+### 5. On-chain attestation of the decision log
+Publish the daily log hash to a public chain so the audit trail is tamper-evident beyond our own database.
+**Gate:** cost + a chain choice; only worth it once the log is the headline claim.
 
 ---
 
 ## Not now (deliberately)
 
-- **Live-account support / real money** — the Connect gate rejects live keys by
-  design; VIGIL is demo-venue-first, real-funds rails are a post-hackathon product
-  decision (custody, insurance, withdrawal UX).
-- **User accounts/billing/quotas** — sessions currently cap at 8 for the free
-  instance; the leaderboard + rate limit make it abuse-tolerant, not a business yet.
+- **Live-account support / real money** — the Connect gate rejects live keys by design; real funds need custody, insurance and withdrawal UX decisions that are out of scope for a demo-venue product.
+- **User accounts / billing / quotas** — sessions cap at 8 for the free instance; the rate limit and leaderboard make it abuse-tolerant, not yet a business.

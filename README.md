@@ -123,11 +123,31 @@ equity-curve analytics, decision log, stub policy).
 
 ## Endpoints
 
+**Pages:** `/` (landing) · `/app` (+`?s=<id>` for a connected book) · `/connect` · `/leaderboard` · `/night` · `/reports/latest`
+
 `GET /health` · `GET /api/state` (incl. live macro regime) · `GET /api/prices` · `GET /api/universe` ·
 `GET /api/metrics` (Sharpe/maxDD/win-rate/realized P&L) · `GET /api/equity` (NAV curve) ·
-`GET /api/backtest?days=90` (real-data strategy backtest) · `GET /api/decisions` ·
-`GET /api/decision-log.csv` · `POST /api/run` ·
+`GET /api/backtest?days=90` (real-data strategy backtest) · `GET /api/decisions` (each with `review_verdict`) ·
+`GET /api/decision-log.csv` · `GET /api/report` · `GET /api/night-timeline?hours=24` · `GET /api/alerts` ·
+`GET /api/leaderboard` · `POST /api/run` ·
 `POST /api/kill {on:true|false}` (halt/resume) · `GET /api/agent/stream` (SSE) · `GET /`.
+
+**Multi-session (Connect):** `GET/POST /api/sessions` · `GET /api/sessions/:id/{state,decisions,metrics,alerts,timeline,log.csv}` ·
+`POST /api/sessions/:id/{run,kill}` (owner-key header `X-VIGIL-OWNER`).
+
+## Two-model decision audit
+
+The decision-maker proposes; a **second reviewer** criticises the plan before execution and its
+verdict is signed into the log (`review_verdict` / `review_rationale`). Rejections drop the
+discretionary orders (the risk layer's own orders always survive). If the reviewer cannot run,
+the plan is rejected — **fail-closed**. UI shows `✓ audit pass` / `✗ audit reject` per decision,
+and `/night` + `/reports/latest` surface rejections with the auditor's reasoning.
+
+## Break-glass alerts
+
+Webhook (Telegram / Discord / Slack / generic JSON) fired on: drawdown breaker trip, kill-switch,
+≥3% NAV move in one sweep, and venue order failures. Deduped per alert type (30 min default).
+Set a per-book webhook at Connect, or a global one via `VIGIL_ALERT_WEBHOOK`.
 
 ## What's under the hood
 

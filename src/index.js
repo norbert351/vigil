@@ -11,12 +11,16 @@ import { portfolioState } from "./engine.js";
 import { runSweep, agentBus, currentWindow } from "./agent.js";
 import { startPerceptionLoop, latestPerception } from "./perception.js";
 import { runBacktest } from "./backtest.js";
+import { buildReport, renderReportHtml } from "./report.js";
+import { buildLeaderboard } from "./leaderboard.js";
+import { buildTimeline } from "./timeline.js";
 import { crossAssetRegime } from "./regime.js";
 import { EXECUTION_MODE, LLM_MODE, SEED_USD_MICRO, DEFAULT_TARGETS, UNIVERSE } from "./config.js";
 import {
   createSession, getSession, authorize, sessionState, restartLoops,
-  listSessions, decryptCreds, sessionDb, sessionVenue, SessionError, MAX_SESSIONS,
+  listSessions, decryptCreds, sessionDb, sessionVenue, sessionAlerts, SessionError, MAX_SESSIONS,
 } from "./sessions.js";
+import { listAlerts } from "./alerts.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
@@ -111,6 +115,17 @@ async function route(req, res) {
     return json(res, 200, { observations: curve.length, curve });
   }
 
+  // overnight sleep report (HTML digest + JSON facts)
+  if (m === "GET" && p === "/reports/latest") {
+    const r = await buildReport(db, {});
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    return res.end(renderReportHtml(r, { title: "Overnight report" }));
+  }
+  if (m === "GET" && p === "/api/report") {
+    const r = await buildReport(db, {});
+    return json(res, 200, r);
+  }
+
   if (m === "POST" && p === "/api/kill") {
     let body = {};
     try { body = await readBody(req); } catch { return json(res, 400, { error: "invalid json" }); }
@@ -151,22 +166,35 @@ async function route(req, res) {
   // ---- multi-session Connect flow ----
   if (m === "GET" && p === "/api/sessions") return json(res, 200, { sessions: listSessions(), capacity: MAX_SESSIONS });
 
+  if (m === "GET" && p === "/api/leaderboard") {
+    const prices = await refreshPrices();
+    return json(res, 200, { books: buildLeaderboard(db, { prices }) });
+  }
+
+  if (m === "GET" && p === "/api/alerts") return json(res, 200, { alerts: listAlerts(db, 50) });
+
+  // event-aligned night timeline (flagship)
+  if (m === "GET" && p === "/api/night-timeline") {
+    const hours = Math.min(Math.max(Number(url.searchParams.get("hours") || 24), 1), 168);
+    return json(res, 200, buildTimeline(db, { hours }));
+  }
+
   if (m === "POST" && p === "/api/sessions") {
     let body;
     try { body = await readBody(req); } catch { return json(res, 400, { error: "invalid json" }); }
     const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
     try {
-      const s = await createSession({ apiKey: body.apiKey, secret: body.secret, passphrase: body.passphrase, name: body.name, ip });
-      return json(res, 201, { ok: true, session: { id: s.id, name: s.name, ownerKey: s.ownerKey, usdt: s.usdt } });
+      const s = await createSession({ apiKey: body.apiKey, secret: body.secret, passphrase: body.passphrase, name: body.name, webhook: body.webhook, ip });
+      return json(res, 201, { ok: true, session: { id: s.id, name: s.name, ownerKey: s.ownerKey, usdt: s.usdt, hasWebhook: s.hasWebhook } });
     } catch (e) {
       const code = e instanceof SessionError ? e.code : "INTERNAL";
-      const status = (["MISSING", "REJECTED", "LIVE_KEY", "RATE", "FULL"].includes(code)) ? 400 : 500;
+      const status = (["MISSING", "REJECTED", "LIVE_KEY", "IN_USE", "RATE", "FULL", "BAD_WEBHOOK"].includes(code)) ? 400 : 500;
       return json(res, status, { ok: false, code, error: e.message });
     }
   }
 
   // session-scoped state (public — read-only view of an isolated book)
-  const sm = p.match(/^\/api\/sessions\/([0-9a-f]+)\/(state|decisions|metrics|log\.csv)$/);
+  const sm = p.match(/^\/api\/sessions\/([0-9a-f]+)\/(state|decisions|metrics|alerts|timeline|log\.csv)$/);
   if (m === "GET" && sm) {
     const session = getSession(sm[1]);
     if (!session) return json(res, 404, { error: "session not found" });
@@ -174,6 +202,11 @@ async function route(req, res) {
     if (sm[2] === "state") return json(res, 200, await viewModelFor(sdb, { executionMode: "bitget", llm: LLM_MODE, session: { id: session.id, name: session.name, createdAt: session.createdAt } }));
     if (sm[2] === "decisions") return json(res, 200, { decisions: listDecisions(sdb, 200) });
     if (sm[2] === "metrics") return json(res, 200, computeMetrics(sdb));
+    if (sm[2] === "alerts") return json(res, 200, { alerts: sessionAlerts(session.id, 50), webhook: !!session.hasWebhook });
+    if (sm[2] === "timeline") {
+      const hours = Math.min(Math.max(Number(url.searchParams.get("hours") || 24), 1), 168);
+      return json(res, 200, buildTimeline(sdb, { hours }));
+    }
     if (sm[2] === "log.csv") {
       const rows = decisionLogCsv(sdb, 0);
       const hdr = "seq,ts,window,trigger,llm,nav_micro,rationale,orders";
@@ -216,6 +249,8 @@ async function route(req, res) {
     if (file === "/" || file === "") file = "/landing.html";
     else if (file === "/app") file = "/dashboard.html";
     else if (file === "/connect") file = "/connect.html";
+    else if (file === "/leaderboard") file = "/leaderboard.html";
+    else if (file === "/night") file = "/night.html";
     if (file.includes("..")) return json(res, 403, { error: "forbidden" });
     const abs = path.join(PUBLIC_DIR, file);
     if (!abs.startsWith(PUBLIC_DIR) || !existsSync(abs) || !statSync(abs).isFile()) return json(res, 404, { error: "not found" });

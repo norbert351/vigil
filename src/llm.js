@@ -120,7 +120,7 @@ function fmt(m) { const n = Number(m) / 1e6; return n.toLocaleString(undefined, 
 
 export function llmFactory() {
   const mode = String(LLM_MODE || "stub").toLowerCase();
-  if (mode === "stub") return { mode: "stub", decide: decideStub };
+  if (mode === "stub") return { mode: "stub", decide: decideStub, review: reviewStub, reviewerModel: "deterministic-auditor" };
 
   // qwen = Bitget's sponsor endpoint; live = any OpenAI-compatible provider (env-wired).
   const base = mode === "qwen" ? QWEN_BASE_URL : (process.env.VIGIL_LLM_BASE_URL || QWEN_BASE_URL);
@@ -128,11 +128,16 @@ export function llmFactory() {
   const key = mode === "qwen" ? process.env.VIGIL_QWEN_API_KEY : process.env.VIGIL_LLM_API_KEY;
   if (!key) {
     console.warn("VIGIL: live-LLM mode requested but no API key wired — falling back to stub. Set VIGIL_LLM_API_KEY.");
-    return { mode: "stub", decide: decideStub };
+    return { mode: "stub", decide: decideStub, review: reviewStub, reviewerModel: "deterministic-auditor" };
   }
   const resolvedMode = mode === "qwen" ? "qwen" : "live";
   const provider = mode === "qwen" ? "bitget-qwen" : (base || "custom");
-  return { mode: resolvedMode, model, provider, decide: (state) => decideLive(state, base, model, key) };
+  return {
+    mode: resolvedMode, model, provider,
+    decide: (state) => decideLive(state, base, model, key),
+    review: (d) => reviewLive(d, base, model, key),
+    reviewerModel: `${model} (audit)`,
+  };
 }
 
 async function decideLive(state, base, model, key) {
@@ -163,6 +168,91 @@ async function decideLive(state, base, model, key) {
     } catch (e) { lastErr = e; }
   }
   throw lastErr;
+}
+
+// ---- TWO-MODEL AUDIT: a second "reviewer" criticizes the decision before execution.
+// The reviewer is strict by construction: it must reject any plan that would
+// increase drawdown exposure, exceed concentration/cash bounds, or trade against
+// an armed breaker. Verdicts are logged into the signed decision (review_verdict).
+
+// Deterministic auditor (stub mode): hard rules, zero LLM cost. Used when no LLM key.
+export function reviewStub({ state, decision }) {
+  const orders = (decision && decision.orders) || [];
+  const problems = [];
+  const nav = Number(state?.nav || 0);
+  const cash = Number(state?.cash || 0);
+  if (state?.breaker || state?.killed) {
+    if (orders.some((o) => ["BUY", "HEDGE"].includes(o.action))) {
+      problems.push("breaker/kill armed but plan still proposes buys");
+    }
+  }
+  for (const o of orders) {
+    const usd = Number(o.usdMicro || 0);
+    if (state?.breaker || state?.killed) {
+      if (o.action !== "SELL" && o.action !== "LIQUIDATE") problems.push(`order ${o.key} not a de-risk while breaker is armed`);
+    }
+    if (!state?.breaker && !state?.killed) {
+      if (usd > nav * 0.25) problems.push(`${o.key} order ($${(usd / 1e6).toFixed(0)}) exceeds 25% of NAV`);
+      if ((o.action === "BUY" || o.action === "HEDGE") && usd > cash * 1.02) problems.push(`${o.key} buy ($${(usd / 1e6).toFixed(0)}) exceeds available cash`);
+    }
+    if (!o.action || !o.key || usd <= 0) problems.push("malformed order (missing action/key or zero value)");
+  }
+  if (problems.length) {
+    return { verdict: "reject", reason: "Deterministic audit: " + problems.join("; ") };
+  }
+  return { verdict: "pass", reason: "Deterministic audit: plan respects breaker, cash and concentration bounds." };
+}
+
+function buildReviewPrompt({ state, decision }) {
+  return [
+    "You are VIGIL's independent AUDITOR — adversarial by design. The decision-maker proposed a trade plan;",
+    "your job is to find reasons it must NOT execute. You are NOT the decision-maker; you are the skeptic.",
+    "",
+    "Audit rules (REJECT if any holds):",
+    "- breaker or killed flags are set but the plan still BUYs/HEDGEs (only de-risk allowed)",
+    "- any single order > 25% of NAV, or total planned exposure > available cash",
+    "- SELL of an asset not currently held, or a LIQUIDATE with nothing held",
+    "- the plan increases drawdown exposure when drawdown is already >50% of the breaker threshold",
+    "- any order with malformed/incomplete fields",
+    "",
+    "Return ONLY JSON: {\"verdict\":\"pass\"|\"reject\",\"reason\":\"1-2 sentences naming the exact violation, or why the plan is sound\"}",
+    "",
+    `NAV $${Number(state?.nav || 0) / 1e6} cash $${Number(state?.cash || 0) / 1e6} drawdown ${(Number(state?.drawdown || 0) * 100).toFixed(1)}% window=${state?.window} breaker=${!!state?.breaker} killed=${!!state?.killed}`,
+    "Proposed plan: " + JSON.stringify(decision?.orders || []),
+  ].join("\n");
+}
+
+export async function reviewLive({ state, decision }, base, model, key) {
+  const body = JSON.stringify({
+    model,
+    messages: [
+      { role: "system", content: "You are a strict, adversarial trading-plan auditor. Prefer finding the flaw." },
+      { role: "user", content: buildReviewPrompt({ state, decision }) },
+    ],
+    temperature: 0.1,
+    max_tokens: 500,
+  });
+  const url = `${base.replace(/\/+$/, "")}/chat/completions`;
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body,
+        signal: AbortSignal.timeout(25_000),
+      });
+      if (!res.ok) throw new Error(`review http ${res.status}`);
+      const j = await res.json();
+      const text = j?.choices?.[0]?.message?.content;
+      if (!text) throw new Error("review empty completion");
+      const verdict = String(text).trim().toLowerCase().includes("reject") ? "reject" : "pass";
+      const reason = String(text).slice(0, 400).replace(/```/g, "").trim();
+      return { verdict, reason: reason || (verdict === "reject" ? "rejected (no reason)" : "approved") };
+    } catch (e) { lastErr = e; }
+  }
+  // audit failure = fail-closed: if the reviewer can't run, don't execute a plan.
+  return { verdict: "reject", reason: `reviewer unavailable (${lastErr.message}) — fail-closed` };
 }
 
 // Robust extraction: strip markdown fences, find the first balanced JSON object.

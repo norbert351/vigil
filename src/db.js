@@ -40,7 +40,9 @@ export function openDB(dbPath) {
       rationale TEXT,
       context_json TEXT,      -- snapshot of what the agent SAW (event → decision traceability)
       orders_json TEXT,
-      mode TEXT               -- paper | bitget
+      mode TEXT,              -- paper | bitget
+      review_verdict TEXT,    -- 'pass' | 'reject' | null (two-model audit)
+      review_rationale TEXT   -- reviewer model's reasoning
     );
     CREATE TABLE IF NOT EXISTS orders (
       seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,6 +67,16 @@ export function openDB(dbPath) {
       ts INTEGER,
       json TEXT
     );
+    CREATE TABLE IF NOT EXISTS alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts INTEGER,
+      type TEXT,
+      severity TEXT,
+      title TEXT,
+      body TEXT,
+      meta TEXT,
+      delivered INTEGER DEFAULT 0
+    );
   `);
   migrate(db);
   return db;
@@ -77,6 +89,8 @@ function migrate(db) {
   if (!has("agent_state", "realized_pnl_micro")) db.exec("ALTER TABLE agent_state ADD COLUMN realized_pnl_micro INTEGER DEFAULT 0");
   if (!has("agent_state", "kill_switched")) db.exec("ALTER TABLE agent_state ADD COLUMN kill_switched INTEGER DEFAULT 0");
   if (!has("decisions", "context_json")) db.exec("ALTER TABLE decisions ADD COLUMN context_json TEXT");
+  if (!has("decisions", "review_verdict")) db.exec("ALTER TABLE decisions ADD COLUMN review_verdict TEXT");
+  if (!has("decisions", "review_rationale")) db.exec("ALTER TABLE decisions ADD COLUMN review_rationale TEXT");
   if (!has("orders", "pnl_micro")) db.exec("ALTER TABLE orders ADD COLUMN pnl_micro INTEGER DEFAULT 0");
   if (!has("orders", "fee_micro")) db.exec("ALTER TABLE orders ADD COLUMN fee_micro INTEGER DEFAULT 0");
 }
@@ -141,10 +155,11 @@ export function equityCurve(db, limit = 5000) {
 export function logDecision(db, d) {
   const rep = (_k, v) => (typeof v === "bigint" ? v.toString() : v);
   const info = db.prepare(
-    "INSERT INTO decisions (ts, window, hash, sentinel, trigger, model, llm, nav_micro, rationale, context_json, orders_json, mode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+    "INSERT INTO decisions (ts, window, hash, sentinel, trigger, model, llm, nav_micro, rationale, context_json, orders_json, mode, review_verdict, review_rationale) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
   ).run(
     d.ts, d.window, d.hash, d.sentinel, d.trigger, d.model || "", d.llm || "",
-    String(d.navMicro || 0), d.rationale || "", d.context ? JSON.stringify(d.context, rep) : null, JSON.stringify(d.orders || [], rep), d.mode || "paper"
+    String(d.navMicro || 0), d.rationale || "", d.context ? JSON.stringify(d.context, rep) : null, JSON.stringify(d.orders || [], rep), d.mode || "paper",
+    d.reviewVerdict || null, d.reviewRationale || null
   );
   const decisionSeq = Number(info.lastInsertRowid);
   for (const o of d.orders || []) {
@@ -177,3 +192,15 @@ export function isKilled(db) { const r = db.prepare("SELECT kill_switched FROM a
 
 // ---- snapshots ----
 export function saveSnapshot(db, json) { db.prepare("INSERT INTO price_snapshots (ts, json) VALUES (?, ?)").run(Date.now(), json); }
+
+// ---- alerts (break-glass notifications) ----
+export function logAlert(db, a) {
+  db.prepare("INSERT INTO alerts (ts, type, severity, title, body, meta, delivered) VALUES (?,?,?,?,?,?,?)")
+    .run(a.ts, a.type, a.severity, a.title, a.body, a.meta || null, a.delivered ? 1 : 0);
+}
+export function alertRows(db, limit = 50) {
+  return db.prepare("SELECT * FROM alerts ORDER BY ts DESC LIMIT ?").all(limit);
+}
+export function recentAlert(db, type) {
+  return db.prepare("SELECT * FROM alerts WHERE type = ? ORDER BY ts DESC LIMIT 1").get(type);
+}

@@ -11,10 +11,11 @@ import { latestPerception } from "./perception.js";
 import { llmFactory } from "./llm.js";
 import {
   flatPositions, setPosition, getCash, setCash, addRealized,
-  setAgentState, saveSnapshot, logDecision, getAgentState, logEquity, isKilled,
+  setAgentState, saveSnapshot, logDecision, getAgentState, logEquity, isKilled, equityCurve,
 } from "./db.js";
 import { DEFAULT_TARGETS, SEED_USD_MICRO as SEED, QTY_SCALE, FEE_BPS, SLIPPAGE_BPS, EXECUTION_MODE } from "./config.js";
 import { crossAssetRegime } from "./regime.js";
+import { evaluateSweepAlerts } from "./alerts.js";
 
 export const agentBus = new EventEmitter();
 const TENK = 10_000n;
@@ -93,10 +94,13 @@ function decisionContext(state, perception) {
 function llmModel(llm) { return llm.provider && llm.mode !== "stub" ? [llm.model, llm.provider].filter(Boolean).join(" @ ") : "deterministic-stub"; }
 
 // One decision cycle.
-export async function runSweep(db, { force = false, venue, execMode } = {}) {
+export async function runSweep(db, { force = false, venue, execMode, webhook, llm: llmOverride } = {}) {
   const mode = execMode || EXECUTION_MODE;
   const prices = await refreshPrices(true);
   saveSnapshot(db, JSON.stringify(prices));
+  // NAV before this sweep — used by the break-glass alert layer
+  let prevNav = 0;
+  try { const c = equityCurve(db, 5); if (c.length) prevNav = Number(c[c.length - 1].nav_micro); } catch { /* fresh */ }
   const venueMode = mode === "bitget";
   // bitget mode: the venue IS the account — sync ledger from venue truth, no paper seed.
   if (venueMode) {
@@ -115,7 +119,7 @@ export async function runSweep(db, { force = false, venue, execMode } = {}) {
   const perception = latestPerception();
   state.perception = perception;
   state.regime = crossAssetRegime(state.prices, perception?.fearGreed?.value ?? null);
-  const llm = llmFactory();
+  const llm = llmOverride || llmFactory();
   const modelLabel = llmModel(llm);
   const fearGreed = perception?.fearGreed?.value ?? null;
 
@@ -135,6 +139,20 @@ export async function runSweep(db, { force = false, venue, execMode } = {}) {
     } catch (e) { llmDecision = null; }
   }
 
+  // TWO-MODEL AUDIT: a second reviewer criticizes the discretionary plan before
+  // execution. On reject → drop the LLM's orders (risk layer orders always survive);
+  // the verdict + reason ride into the signed decision log.
+  let review = null;
+  if (llmDecision && ((llmDecision.orders || []).length > 0) && !risk.breaker && !state.killed) {
+    try {
+      review = await llm.review({ state, decision: llmDecision });
+      review = { verdict: String(review?.verdict || "reject").toLowerCase() === "pass" ? "pass" : "reject", reason: String(review?.reason || "") };
+      if (review.verdict === "reject") {
+        llmDecision = { ...llmDecision, orders: [], rejectedReason: review.reason };
+      }
+    } catch (e) { review = null; }
+  }
+
   let orders;
   if (risk.breaker || state.killed) {
     orders = risk.orders; // breaker liquidation / kill = halt
@@ -150,18 +168,33 @@ export async function runSweep(db, { force = false, venue, execMode } = {}) {
 
   if (orders.length === 0) {
     const holdTrigger = state.killed ? "killed" : risk.breaker ? "risk" : "hold";
-    logDecision(db, { ts: Date.now(), window: state.window, hash: "-", sentinel: "VIGIL-hold", trigger: holdTrigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: [], mode });
+    const auditNote = review && review.verdict === "reject" && llmDecision?.rejectedReason
+      ? `Auditor rejected the proposal: ${llmDecision.rejectedReason}`
+      : null;
+    logDecision(db, {
+      ts: Date.now(), window: state.window, hash: "-", sentinel: "VIGIL-hold", trigger: holdTrigger, model: modelLabel, llm: llm.mode, navMicro,
+      rationale: auditNote ? `${rationale} ${auditNote}` : rationale, context, orders: [], mode,
+      reviewVerdict: review?.verdict || null, reviewRationale: review?.reason || (auditNote || null),
+    });
     setAgentState(db, { nav_micro: state.peak, cash_micro: state.cash, drawdown: state.drawdown, status: state.killed ? "killed" : "held", last_run_ts: Date.now() });
     logEquity(db, Date.now(), navMicro, BigInt(Math.round(state.cash)));
     agentBus.emit("event", { type: "decision", window: state.window, trigger: holdTrigger, llm: llm.mode, navMicro: state.nav.toString() });
+    // break-glass alerts (breaker / kill / outsized move)
+    await evaluateSweepAlerts(db, { result: { breaker: risk.breaker, decision: holdTrigger }, state, prevNav, webhook }).catch(() => {});
     return { decision: holdTrigger, nav: state.nav, window: state.window, seeded };
   }
 
   const res = await executeOrders(db, { orders, trigger, rationale, window: state.window, model: modelLabel, llm: llm.mode, prices, navMicro, context, venue, execMode: mode });
-  logDecision(db, { ts: Date.now(), window: state.window, hash: res.manifest.hash, sentinel: res.manifest.sentinel, trigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: res.executed, mode: res.mode });
+  logDecision(db, {
+    ts: Date.now(), window: state.window, hash: res.manifest.hash, sentinel: res.manifest.sentinel, trigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: res.executed, mode: res.mode,
+    reviewVerdict: review?.verdict || null, reviewRationale: review?.reason || null,
+  });
   setAgentState(db, { nav_micro: state.peak, cash_micro: getCash(db), drawdown: state.drawdown, status: risk.breaker ? "breaker" : "traded", last_run_ts: Date.now(), nonce: res.nonce, breaker_tripped: risk.breaker ? 1 : 0 });
   logEquity(db, Date.now(), navMicro, getCash(db));
   agentBus.emit("event", { type: "decision", window: state.window, trigger, llm: llm.mode, navMicro: state.nav.toString(), hash: res.manifest.hash, orders: res.executed.length });
+  // break-glass alerts (breaker / kill / outsized move / venue failures)
+  const vstats = globalThis.__vigilVenueStats || {};
+  await evaluateSweepAlerts(db, { result: { breaker: risk.breaker, decision: trigger, venueErrors: vstats.venueErrors || 0 }, state, prevNav, webhook }).catch(() => {});
   return { decision: "traded", nav: state.nav, orders: res.executed.length, hash: res.manifest.hash, window: state.window, seeded };
 }
 

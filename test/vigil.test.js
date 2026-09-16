@@ -240,3 +240,107 @@ test("probeDemoKey rejects missing creds cleanly", async () => {
   assert.equal(r.ok, false);
   assert.match(r.reason, /missing/i);
 });
+
+// --- TWO-MODEL AUDIT ---
+import { reviewStub } from "../src/llm.js";
+
+test("auditor rejects a buy while the breaker is armed", () => {
+  const r = reviewStub({ state: { nav: 1e10, cash: 1e9, breaker: true }, decision: { orders: [{ action: "BUY", key: "btc", usdMicro: 1e8 }] } });
+  assert.equal(r.verdict, "reject");
+  assert.match(r.reason, /breaker/i);
+});
+
+test("auditor rejects orders above 25% of NAV or cash", () => {
+  const big = reviewStub({ state: { nav: 1e10, cash: 1e10, breaker: false }, decision: { orders: [{ action: "BUY", key: "rnvda", usdMicro: 5e9 }] } });
+  assert.equal(big.verdict, "reject");
+  const overspend = reviewStub({ state: { nav: 1e10, cash: 1e8, breaker: false }, decision: { orders: [{ action: "BUY", key: "rspy", usdMicro: 5e8 }] } });
+  assert.equal(overspend.verdict, "reject");
+});
+
+test("auditor passes a conservative de-risk and flags malformed orders", () => {
+  const ok = reviewStub({ state: { nav: 1e10, cash: 1e9, breaker: false }, decision: { orders: [{ action: "SELL", key: "btc", usdMicro: 5e8 }] } });
+  assert.equal(ok.verdict, "pass");
+  const bad = reviewStub({ state: { nav: 1e10, cash: 1e9, breaker: false }, decision: { orders: [{ action: "", key: "", usdMicro: 0 }] } });
+  assert.equal(bad.verdict, "reject");
+});
+
+// --- TIMELINE ---
+import { buildTimeline } from "../src/timeline.js";
+
+test("timeline merges decisions, news and nav into one ordered axis", () => {
+  const db = freshDb();
+  logDecision(db, { ts: Date.now() - 60000, window: "night", hash: "h", sentinel: "VIGIL-abc",
+    trigger: "hedge", model: "m", llm: "live", navMicro: 1e10, rationale: "rotated",
+    context: { news: [{ title: "CPI hot" }], fearGreed: 22 }, orders: [{ action: "SELL", key: "btc" }], mode: "bitget" });
+  logEquity(db, Date.now() - 60000, 1e10, 1e9);
+  logEquity(db, Date.now(), 1.01e10, 1e9);
+  const t = buildTimeline(db, { hours: 24 });
+  assert.ok(t.events.length >= 3, `events=${t.events.length}`);
+  const kinds = t.events.map((e) => e.kind);
+  assert.ok(kinds.includes("decision") && kinds.includes("news") && kinds.includes("macro"));
+  assert.equal(t.counts.trades, 1);
+  assert.ok(t.events.every((e, i) => i === 0 || e.ts >= t.events[i - 1].ts), "events sorted by time");
+});
+
+// --- LEADERBOARD ---
+import { rankBooks, scoreBook } from "../src/leaderboard.js";
+
+test("leaderboard ranks by return then decisions", () => {
+  const ranked = rankBooks([
+    { name: "A", returnPct: 1.0, sharpe: null, decisions: 5 },
+    { name: "B", returnPct: 3.5, sharpe: null, decisions: 2 },
+    { name: "C", returnPct: -2.0, sharpe: null, decisions: 9 },
+  ]);
+  assert.deepEqual(ranked.map((b) => b.name), ["B", "A", "C"]);
+  assert.equal(ranked[0].rank, 1);
+});
+
+test("leaderboard scores a book from its own ledger", () => {
+  const db = freshDb();
+  setCash(db, 5_500_000_000n);                                    // current: $5,500
+  logEquity(db, Date.now() - 1000, 5_000_000_000n, 5_000_000_000n); // first observation: $5,000
+  logEquity(db, Date.now(), 5_500_000_000n, 5_500_000_000n);
+  const s = scoreBook(db, { id: "t", name: "Test", prices: PX });
+  assert.ok(s.nav > 0, `nav=${s.nav}`);
+  assert.equal(s.startNav, 5000);
+  assert.ok(Math.abs(s.returnPct - 10) < 0.01, `return=${s.returnPct}`);
+});
+
+// --- TWO-MODEL AUDIT end-to-end in the agent loop ---
+import { runSweep } from "../src/agent.js";
+
+test("agent loop: auditor REJECTS an oversize LLM plan and logs the verdict", async () => {
+  const db = freshDb();
+  setPosition(db, "rtsla", 10_000_000n, 359_770_000n);  // ~$3,600 held (blocks the paper seed)
+  setCash(db, 8_000_000_000n);                          // $8,000 free cash → NAV ≈ $11,600
+  const sneaky = {
+    mode: "live", model: "test-model", provider: "test", reviewerModel: "test-audit",
+    decide: async () => ({ trigger: "rebalance", rationale: "all-in on one name", orders: [{ action: "BUY", key: "rnvda", usdMicro: 7_000_000_000 }] }),
+    review: reviewStub,
+  };
+  await runSweep(db, { execMode: "paper", llm: sneaky });
+  const dec = listDecisions(db, 1)[0];
+  const logged = JSON.parse(dec.orders_json || "[]");
+  assert.equal(dec.review_verdict, "reject", "audit verdict must be logged");
+  assert.match(dec.review_rationale || "", /25% of NAV|exceeds/i);
+  // the rejected $7,000 order must not appear; every logged order stays inside the cap
+  assert.ok(!logged.some((o) => Number(o.usdMicro || 0) >= 7_000_000_000), "rejected order must NOT execute");
+  const nav = Number(dec.nav_micro);
+  for (const o of logged) assert.ok(Number(o.usdMicro || 0) <= nav * 0.25, "no logged order may exceed 25% of NAV");
+});
+
+test("agent loop: auditor PASSES a conservative LLM plan and it executes", async () => {
+  const db = freshDb();
+  setPosition(db, "rtsla", 10_000_000n, 359_770_000n);
+  setCash(db, 8_000_000_000n);                          // free cash → a $500 nibble is affordable
+  const gentle = {
+    mode: "live", model: "test-model", provider: "test",
+    decide: async () => ({ trigger: "rebalance", rationale: "small nibble", orders: [{ action: "BUY", key: "rspy", usdMicro: 500_000_000 }] }),
+    review: reviewStub,
+  };
+  await runSweep(db, { execMode: "paper", llm: gentle });
+  const dec = listDecisions(db, 1)[0];
+  const logged = JSON.parse(dec.orders_json || "[]");
+  assert.equal(dec.review_verdict, "pass", `reason=${dec.review_rationale}`);
+  assert.ok(logged.some((o) => o.action === "BUY" && o.key === "rspy"), "approved order should execute");
+});

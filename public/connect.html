@@ -110,6 +110,8 @@ input::placeholder{color:#5A7398}
       <input id="secret" type="password" placeholder="shown once at creation" autocomplete="off" />
       <label for="pass">Passphrase</label>
       <input id="pass" type="password" placeholder="the 8–32 char one you set" autocomplete="off" />
+      <label for="hook">Alert webhook (optional)</label>
+      <input id="hook" placeholder="Telegram / Discord / Slack webhook URL" autocomplete="off" spellcheck="false" />
       <button class="btn" id="go">Connect &amp; start the agent <span class="arr">→</span></button>
       <div class="msg" id="msg"></div>
       <div class="sec" id="sec" style="display:none"></div>
@@ -128,13 +130,14 @@ input::placeholder{color:#5A7398}
     var apiKey = document.getElementById('key').value.trim();
     var secret = document.getElementById('secret').value.trim();
     var passphrase = document.getElementById('pass').value.trim();
+    var webhook = document.getElementById('hook').value.trim();
     if (!apiKey || !secret || !passphrase){ show(msg, 'All three key fields are required.', false); return; }
     go.disabled = true; go.classList.add('loading'); go.innerHTML = '<span class="spin"></span> Validating…';
     try {
       var r = await fetch('/api/sessions', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ apiKey: apiKey, secret: secret, passphrase: passphrase, name: name })
+        body: JSON.stringify({ apiKey: apiKey, secret: secret, passphrase: passphrase, name: name, webhook: webhook })
       });
       var j = await r.json();
       if (!r.ok || !j.ok) { show(msg, (j.error || 'Connection failed') + (j.code ? ' <code>('+j.code+')</code>' : ''), false); go.disabled = false; go.classList.remove('loading'); go.innerHTML = 'Connect &amp; start the agent <span class="arr">→</span>'; return; }

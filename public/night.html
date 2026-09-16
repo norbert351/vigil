@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Night timeline · VIGIL</title>
+<link rel="preconnect" href="https://api.fontshare.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@500,600,700,800&f[]=general-sans@400,500,600,700&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" />
+<style>
+:root{--bg:#070F1D;--pane:#0B1B33;--pane2:#12284A;--line:rgba(160,190,230,.16);--brand:#4FA3FF;--brand2:#6FD3FF;--white:#fff;--txt:#D7E4F5;--mut:#8FA9CB;--up:#3DD68C;--down:#FF6B6B;--warn:#FFB84D;--glass:rgba(255,255,255,.06);--disp:'Cabinet Grotesk',sans-serif;--body:'General Sans',sans-serif;--mono:'JetBrains Mono',monospace;--ease:cubic-bezier(.16,1,.3,1)}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--txt);font:15px/1.6 var(--body);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}.wrap{width:min(1100px,93%);margin:0 auto}
+header{position:sticky;top:0;z-index:50;background:rgba(7,15,29,.8);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;justify-content:space-between;height:66px}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--disp);font-weight:700;font-size:20px;color:#fff}.brand .mark{width:28px;height:28px}
+.nav-l{display:flex;gap:22px;font-size:14px}.nav-l a:hover{color:#fff}
+main{padding:44px 0 80px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--brand2);margin-bottom:12px}
+h1{font-family:var(--disp);font-weight:700;font-size:clamp(28px,4vw,42px);color:#fff;letter-spacing:-.015em;margin-bottom:10px}
+.lead{color:#C2D5EE;max-width:62ch;margin-bottom:26px}
+.range{display:flex;gap:8px;margin-bottom:26px}
+.range button{font-family:var(--mono);font-size:12px;padding:7px 14px;border-radius:9px;border:1px solid var(--line);background:var(--glass);color:var(--txt);cursor:pointer;transition:border-color .3s var(--ease)}
+.range button.on{border-color:rgba(160,210,255,.5);background:rgba(79,163,255,.14);color:#fff}
+.spark{border:1px solid var(--line);border-radius:16px;background:var(--pane);padding:18px;margin-bottom:26px}
+.spark .head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;font-family:var(--mono);font-size:12px;color:var(--mut)}
+.spark .big{font-family:var(--disp);font-weight:700;font-size:22px;color:#fff}
+.spark svg{display:block;width:100%;height:120px}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:30px}
+.k{border:1px solid var(--line);border-radius:13px;background:var(--pane);padding:14px}
+.k .n{font-family:var(--disp);font-weight:700;font-size:20px;color:#fff}.k .n.bad{color:#FFB4B4}.k .n.good{color:var(--up)}
+.k .l{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin-top:5px}
+.tl{position:relative;padding-left:34px}
+.tl::before{content:"";position:absolute;left:11px;top:6px;bottom:6px;width:2px;background:linear-gradient(180deg,rgba(79,163,255,.5),rgba(79,163,255,.08))}
+.ev{position:relative;margin-bottom:14px;border:1px solid var(--line);border-radius:13px;background:var(--pane);padding:13px 16px;transition:transform .3s var(--ease),border-color .3s var(--ease)}
+.ev:hover{transform:translateX(3px);border-color:rgba(160,210,255,.35)}
+.ev .dot{position:absolute;left:-30px;top:18px;width:11px;height:11px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 3px rgba(79,163,255,.16)}
+.ev.news .dot{background:#7C93B8}.ev.alert .dot{background:var(--down);box-shadow:0 0 0 3px rgba(255,107,107,.16)}
+.ev.macro .dot{background:var(--brand2)}.ev.reject .dot{background:var(--warn);box-shadow:0 0 0 3px rgba(255,184,77,.16)}
+.ev .top{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.ev .t{font-family:var(--mono);font-size:11.5px;color:var(--mut)}
+.ev .tag{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--brand2)}
+.ev.news .tag{color:#9FB4D4}.ev.alert .tag{color:#FFB4B4}.ev.reject .tag{color:#FFD9A0}
+.ev .body{margin-top:7px;font-size:14.5px;color:#DDEAFB}
+.ev .meta{margin-top:6px;font-family:var(--mono);font-size:11.5px;color:var(--mut)}
+.empty{padding:40px;text-align:center;color:var(--mut);border:1px dashed var(--line);border-radius:14px}
+@media(max-width:800px){.kpis{grid-template-columns:repeat(2,1fr)}.nav-l{display:none}}
+</style>
+</head>
+<body>
+<header><div class="wrap nav">
+  <a class="brand" href="/">
+    <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <rect x="1" y="1" width="30" height="30" rx="8" stroke="url(#g1)" stroke-width="1.6"/>
+      <path d="M16 8.5c4.2 0 7.5 3.3 7.5 7.5s-3.3 7.5-7.5 7.5-7.5-3.3-7.5-7.5 3.3-7.5 7.5-7.5z" stroke="url(#g1)" stroke-width="1.6"/>
+      <path d="M16 12v4.5l3 2" stroke="url(#g1)" stroke-width="1.8" stroke-linecap="round"/>
+      <defs><linearGradient id="g1" x1="4" y1="4" x2="28" y2="28"><stop stop-color="#6FD3FF"/><stop offset="1" stop-color="#2F7FD8"/></linearGradient></defs>
+    </svg>VIGIL
+  </a>
+  <nav class="nav-l"><a href="/">Home</a><a href="/app">Live agent</a><a href="/leaderboard">Leaderboard</a><a href="/reports/latest">Sleep report</a></nav>
+</div></header>
+
+<main><div class="wrap">
+  <div class="eyebrow">Event → decision → fill</div>
+  <h1>The night, on one axis</h1>
+  <p class="lead">Every headline the agent saw, every decision it made, every fill it got — aligned in time with the book's NAV. This is the audit trail, visualised.</p>
+  <div class="range" id="range">
+    <button data-h="6">6h</button><button data-h="24" class="on">24h</button><button data-h="72">72h</button><button data-h="168">7d</button>
+  </div>
+  <div class="spark">
+    <div class="head"><span>NAV across the window</span><span id="chg">—</span></div>
+    <svg id="spark" viewBox="0 0 1000 120" preserveAspectRatio="none"></svg>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="tl" id="tl"><div class="empty">loading the night…</div></div>
+</div></main>
+
+<script>
+(function(){
+  var hours = 24;
+  var U = function(n){ return '$' + Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2}); };
+  function ts(t){ return new Date(Number(t)).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
+  function day(t){ return new Date(Number(t)).toLocaleDateString([], {month:'short', day:'numeric'}); }
+
+  function spark(curve){
+    var svg = document.getElementById('spark');
+    if (!curve || curve.length < 2){ svg.innerHTML = '<text x="500" y="64" text-anchor="middle" fill="#8FA9CB" font-size="13" font-family="JetBrains Mono, monospace">not enough observations yet</text>'; return; }
+    var min = Math.min.apply(null, curve.map(function(p){ return p.nav; }));
+    var max = Math.max.apply(null, curve.map(function(p){ return p.nav; }));
+    var span = (max - min) || 1;
+    var pts = curve.map(function(p, i){
+      var x = (i / (curve.length - 1)) * 1000;
+      var y = 110 - ((p.nav - min) / span) * 96;
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    });
+    var up = curve[curve.length-1].nav >= curve[0].nav;
+    var color = up ? '#3DD68C' : '#FF6B6B';
+    svg.innerHTML = '<defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">'
+      + '<stop offset="0" stop-color="' + color + '" stop-opacity=".35"/><stop offset="1" stop-color="' + color + '" stop-opacity="0"/></linearGradient></defs>'
+      + '<polygon points="0,120 ' + pts.join(' ') + ' 1000,120" fill="url(#lg)"/>'
+      + '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="2.4" stroke-linejoin="round"/>';
+  }
+
+  function render(d){
+    var c = d.counts || {};
+    document.getElementById('chg').textContent = (d.changePct>=0?'+':'') + Number(d.changePct||0).toFixed(2) + '%  ·  ' + d.events.length + ' events';
+    document.getElementById('kpis').innerHTML = [
+      ['NAV now', U(d.navEnd), d.changePct >= 0 ? 'good' : 'bad'],
+      ['Decisions', c.decisions || 0, ''],
+      ['Trades', c.trades || 0, ''],
+      ['Audit rejects', c.rejected || 0, (c.rejected ? 'bad' : '')],
+      ['Alerts', c.alerts || 0, (c.alerts ? 'bad' : '')],
+    ].map(function(k){ return '<div class="k"><div class="n '+k[2]+'">'+k[1]+'</div><div class="l">'+k[0]+'</div></div>'; }).join('');
+    spark(d.navCurve);
+
+    var tl = document.getElementById('tl');
+    if (!d.events.length){ tl.innerHTML = '<div class="empty">No events in this window yet — the agent logs one decision every sweep.</div>'; return; }
+    /* collapse consecutive identical headlines, then render the most recent slice
+       (a 24h window can hold 1000+ events; dumping them all is noise + jank) */
+    var seen = null, compact = [];
+    d.events.forEach(function(e){
+      var key = e.kind + '|' + (e.title || e.trigger || '');
+      if (e.kind === 'news' && key === seen) return;   // dedupe repeats of the same headline
+      seen = key;
+      compact.push(e);
+    });
+    var CAP = 150;
+    var slice = compact.slice(-CAP);
+    var hidden = compact.length - slice.length;
+    tl.innerHTML = (hidden > 0
+        ? '<div class="meta" style="margin-bottom:12px;color:#8FA9CB">showing the most recent ' + slice.length + ' of ' + compact.length + ' events</div>'
+        : '')
+      + slice.slice().reverse().map(function(e){
+      var cls = e.kind === 'decision' ? (e.verdict === 'reject' ? 'reject' : '') : e.kind;
+      var tag = e.kind === 'decision' ? (e.verdict === 'reject' ? 'decision · audited' : 'decision') : e.kind;
+      var body = e.kind === 'decision'
+        ? '<div class="body">' + (e.rationale || e.trigger || '').slice(0, 260) + '</div>'
+          + (e.verdictReason && e.verdict === 'reject' ? '<div class="meta">✗ auditor: ' + String(e.verdictReason).slice(0,160) + '</div>' : '')
+          + (e.trades && e.trades.length ? '<div class="meta">' + e.trades.map(function(t){ return t.action + ' ' + t.key; }).join(' · ') + (e.sentinel ? '  ·  ' + e.sentinel : '') + '</div>' : '<div class="meta">hold — no orders</div>')
+        : '<div class="body">' + String(e.title || '').slice(0, 240) + '</div>' + (e.body ? '<div class="meta">' + String(e.body).slice(0,160) + '</div>' : '');
+      return '<div class="ev ' + cls + '"><span class="dot"></span><div class="top"><span class="t">' + day(e.ts) + ' ' + ts(e.ts) + '</span><span class="tag">' + tag + '</span></div>' + body + '</div>';
+    }).join('');
+  }
+
+  function load(){
+    fetch('/api/night-timeline?hours=' + hours).then(function(r){ return r.ok?r.json():null; }).then(function(d){ if (d) render(d); }).catch(function(){});
+  }
+  document.getElementById('range').addEventListener('click', function(ev){
+    if (ev.target.tagName !== 'BUTTON') return;
+    hours = Number(ev.target.dataset.h);
+    [].forEach.call(this.children, function(b){ b.classList.toggle('on', b === ev.target); });
+    load();
+  });
+  load();
+  setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>
