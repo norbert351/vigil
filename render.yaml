@@ -9,10 +9,29 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
+      # Execution: real signed orders on Bitget's paper-trading venue (PAPTRADING:1,
+      # virtual funds only). Capability-aware: rTokens are halted in demo -> labelled
+      # paper-fallback legs; crypto is venue-filled.
       - key: VIGIL_EXEC
-        value: paper
+        value: bitget
+      # Decision-maker: a REAL LLM (Agentic Trading track requires the LLM to decide).
+      # Gemini via the OpenAI-compatible seam; Qwen (sponsor) is a one-var swap:
+      #   VIGIL_LLM=qwen + VIGIL_QWEN_API_KEY (KYC-provisioned)
       - key: VIGIL_LLM
-        value: stub
+        value: live
+      - key: VIGIL_LLM_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai
+      - key: VIGIL_LLM_MODEL
+        value: gemini-3.6-flash
+      - key: VIGIL_LLM_API_KEY
+        sync: false
+      # Bitget demo-venue credentials (paper-trading env, Read+Trade, no withdraw).
+      - key: VIGIL_BITGET_API_KEY
+        sync: false
+      - key: VIGIL_BITGET_SECRET
+        sync: false
+      - key: VIGIL_BITGET_PASSPHRASE
+        sync: false
       - key: VIGIL_SEED_USD
         value: "10000"
       - key: VIGIL_SCAN_MS
