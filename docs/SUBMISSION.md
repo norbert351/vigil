@@ -74,10 +74,16 @@ with Bitget **Qwen `qwen3.8-max`** as a one-var sponsor swap), hard risk layer
 (night-mode + Fear-regime rotation), cash-correct paper executor (fees + slippage),
 signed-manifest ledger with bound context, equity-curve + Sharpe/max-DD/win-rate
 analytics, HTTP/SSE dashboard, **15/15 tests green**, public repo, fresh clone verified
-to boot. **Not yet:** real-venue (Bitget Demo/Agentic) execution — the `EXECUTION_MODE=bitget`
-seam is in place, pending a Demo API key — and the Qwen sponsor key (pending KYC credit).
-**Frameworks/APIs:** node:sqlite, node:http, Bitget UTA v3 public market data, Bitget
-Agent Hub / market-data MCP, an OpenAI-compatible LLM endpoint.
+to boot, **and real venue execution live on Bitget's paper-trading environment** — VIGIL
+places signed UTA v3 spot market orders (verified fills: BTC/ETH, `status: filled`) and
+re-syncs its ledger to venue truth after every sweep. The venue route is capability-aware:
+the demo environment lists tokenized stocks as `status:"halt"` / region-restricted, so VIGIL
+detects that from the venue's own symbol list and routes those legs to an explicitly
+labelled `paper-fallback` fill rather than pretending they were venue-executed. Still
+pending: the Qwen sponsor key (KYC credit).
+**Frameworks/APIs:** node:sqlite, node:http, Bitget UTA v3 (public market data + signed
+spot trading in the demo environment via `PAPTRADING:1`), Bitget market-data MCP, an
+OpenAI-compatible LLM endpoint.
 
 ### Part 5 · Deliverables (in Submission Materials Link)
 - Public **GitHub repo** (code, tests, render.yaml, README)

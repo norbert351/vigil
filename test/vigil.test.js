@@ -184,3 +184,33 @@ test("llm stub honors a breaker (no discretionary orders)", async () => {
   assert.equal(d.trigger, "risk");
   assert.equal(d.orders.length, 0); // stub defers to the risk layer's liquidation
 });
+// --- VENUE helpers (pure, no network) ---
+import { floorTo, roundTo, venueSymbol, toSizeUsd, toSizeBase } from "../src/venue.js";
+
+test("venue.floorTo respects precision and never overshoots", () => {
+  assert.equal(floorTo("0.2935000000", 4), "0.2935");
+  assert.equal(floorTo("0.00123456", 4), "0.0012");
+  assert.equal(floorTo("3.19999999", 2), "3.19");
+  assert.equal(floorTo("1.000000000", 4), "1");
+});
+
+test("venue.roundTo respects precision", () => {
+  assert.equal(roundTo("3.141592", 2), "3.14");
+  assert.equal(roundTo("2.995", 2), "3");
+  assert.equal(roundTo("0.00009999", 4), "0.0001");
+});
+
+test("venue maps universe keys to Bitget symbols", () => {
+  assert.equal(venueSymbol("btc"), "BTCUSDT");
+  assert.equal(venueSymbol("eth"), "ETHUSDT");
+  assert.equal(venueSymbol("rtsla"), "RTSLAUSDT");
+  assert.equal(venueSymbol("rspy"), "RSPYUSDT");
+  assert.equal(venueSymbol("nope"), null);
+});
+
+test("venue size helpers convert micro-units to venue decimal strings", () => {
+  assert.equal(toSizeUsd(5_000_000n), "5"); // $5
+  assert.equal(toSizeUsd(1_234_567n), "1.234567");
+  const base = toSizeBase(1_000_000_000n, 500_000_000n); // 1 token @ $500
+  assert.ok(Math.abs(Number(base) - 2) < 0.000001, `base=$base`);
+});

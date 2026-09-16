@@ -92,10 +92,82 @@ export async function placeMarketOrder({ key, side, size }) {
   return { orderId: data?.orderId, status: data?.status, symbol };
 }
 
+// ---- venue capability map ----
+// The demo environment publishes its OWN tradable symbol list (25 symbols) when the
+// PAPTRADING header is sent. Tokenized stocks (rToken) are listed but `status:"halt"`
+// and region-restricted there, so they cannot be venue-traded — VIGIL detects this and
+// routes those legs to a clearly-labelled paper fill instead of failing blind.
+let _symCache = null;
+
+export async function venueSymbols(force = false) {
+  if (!force && _symCache && Date.now() - _symCache.at < 300_000) return _symCache.map;
+  const data = await call("GET", "/api/v2/spot/public/symbols");
+  const map = {};
+  for (const s of data || []) {
+    map[s.symbol] = {
+      status: s.status,
+      quantityPrecision: Number(s.quantityPrecision ?? 4),
+      quotePrecision: Number(s.quotePrecision ?? 6),
+      minTradeUSDT: Number(s.minTradeUSDT || 0),
+      areaSymbol: s.areaSymbol,
+    };
+  }
+  _symCache = { at: Date.now(), map };
+  return map;
+}
+
+// Can this universe key be traded on the venue right now?
+export async function venueTradable(key) {
+  const sym = venueSymbol(key);
+  if (!sym) return { ok: false, reason: "no venue symbol" };
+  try {
+    const m = await venueSymbols();
+    const e = m[sym];
+    if (!e) return { ok: false, reason: `${sym} not in demo venue list` };
+    if (e.status !== "online") return { ok: false, reason: `${sym} status=${e.status}` };
+    if (e.areaSymbol === "yes") return { ok: false, reason: `${sym} region-restricted` };
+    return { ok: true, meta: e, symbol: sym };
+  } catch (err) {
+    return { ok: false, reason: `symbol list unavailable: ${err.message}`, unknown: true };
+  }
+}
+
+// Truncate a decimal string to N decimals (floor) — never overshoot the venue's
+// quantity precision, which would be rejected with "Parameter verification exception".
+export function floorTo(value, precision) {
+  const f = 10 ** precision;
+  const v = Math.floor(Number(value) * f) / f;
+  return v.toFixed(precision).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+export function roundTo(value, precision) {
+  const f = 10 ** precision;
+  const v = Math.round(Number(value) * f) / f;
+  return v.toFixed(precision).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 // Fill details for a placed order (price, filled base qty, fee).
 export async function getOrderInfo(orderId) {
   const data = await call("GET", `/api/v2/spot/trade/orderInfo?orderId=${orderId}`);
   return data;
+}
+
+// Market orders settle asynchronously — poll orderInfo until filled (or timeout).
+// Without this the immediate query returns price/size 0 and the decision log loses
+// the real fill economics.
+export async function waitForFill(orderId, { timeoutMs = 6000, intervalMs = 400 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    try {
+      const info = (await getOrderInfo(orderId))?.[0] || null;
+      last = info;
+      if (info && (info.status === "filled" || info.status === "partial_fill")) return info;
+      if (info && (info.status === "canceled" || info.status === "cancelled")) return info;
+    } catch { /* retry */ }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return last;
 }
 
 export function toSizeUsd(usdMicro) {

@@ -62,6 +62,15 @@ npm test             # 15 tests: engine / risk / executor / db / llm
 | **Paper** (default) | unset/`paper` | Cash-correct local ledger at live market prices, fee + slippage, signed manifest log. Zero external credentials. |
 | **Bitget demo venue** | `bitget` | Real signed UTA v3 spot market orders on Bitget's **paper-trading environment** (`PAPTRADING:1` — virtual funds only, never real money). Ledger re-syncs to venue truth after every sweep. |
 
+**Capability-aware hybrid routing.** The demo venue publishes its own tradable list (25 symbols). Tokenized stocks appear there as `status:"halt"` and region-restricted, so they cannot be venue-traded. VIGIL asks the venue *before* ordering and routes each leg accordingly:
+
+| Leg | Route | Label in the log |
+|---|---|---|
+| BTC / ETH (venue-tradable) | **Signed venue order**, real fill pulled back from `orderInfo` | `venue:<orderId>` |
+| rToken (venue-halted/absent) | Internal ledger at live market price | `paper-fallback (<venue reason>)` |
+
+Every row in the decision log states which venue actually filled it — the log never presents a simulated leg as a venue fill.
+
 ### Bitget venue setup
 
 1. Create a **Demo API key** on Bitget (system-generated, permissions: **Read + Trade**, **no Withdraw**). You get API Key + Secret + Passphrase.
