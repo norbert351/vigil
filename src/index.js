@@ -17,7 +17,7 @@ import { EXECUTION_MODE, LLM_MODE, SEED_USD_MICRO, DEFAULT_TARGETS, UNIVERSE } f
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
 const PORT = Number(process.env.PORT || 8080);
-const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".csv": "text/csv", ".json": "application/json", ".ico": "image/x-icon" };
+const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".csv": "text/csv", ".json": "application/json", ".ico": "image/x-icon", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".avif": "image/avif" };
 
 const db = openDB();
 
@@ -144,12 +144,16 @@ async function route(req, res) {
   // static
   if (m === "GET" || m === "HEAD") {
     let file = path.normalize(url.pathname);
-    if (file === "/" || file === "") file = "/dashboard.html";
+    if (file === "/" || file === "") file = "/landing.html";
+    else if (file === "/app") file = "/dashboard.html";
     if (file.includes("..")) return json(res, 403, { error: "forbidden" });
     const abs = path.join(PUBLIC_DIR, file);
     if (!abs.startsWith(PUBLIC_DIR) || !existsSync(abs) || !statSync(abs).isFile()) return json(res, 404, { error: "not found" });
     const ext = path.extname(abs).toLowerCase();
-    res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream", "Cache-Control": "no-store" });
+    res.writeHead(200, {
+      "Content-Type": MIME[ext] || "application/octet-stream",
+      "Cache-Control": ext === ".html" ? "no-store" : "public, max-age=3600",
+    });
     if (m === "HEAD") return res.end();
     return res.end(readFileSync(abs));
   }
