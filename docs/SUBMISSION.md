@@ -69,8 +69,8 @@ every decision, and the live dashboard (SSE) shows it still running.
 ### Part 4 · Progress
 **Built:** full zero-dep Node agent — live Bitget rToken+crypto pricing (12-symbol
 universe), overnight perception (Bitget market-data MCP + RSS + Fear&Greed fallbacks),
-a **LIVE LLM decision-maker** (OpenAI-compatible seam; running today on Gemini 3.6 Flash
-with Bitget **Qwen `qwen3.8-max`** as a one-var sponsor swap), hard risk layer
+a **LIVE LLM decision-maker** (OpenAI-compatible seam; the sponsor's **Bitget Qwen
+`qwen3.8-max`** is wired and running via `VIGIL_LLM=qwen`, same seam and loop), hard risk layer
 (night-mode + Fear-regime rotation), cash-correct paper executor (fees + slippage),
 signed-manifest ledger with bound context, equity-curve + Sharpe/max-DD/win-rate
 analytics, HTTP/SSE dashboard, **15/15 tests green**, public repo, fresh clone verified
@@ -79,8 +79,10 @@ places signed UTA v3 spot market orders (verified fills: BTC/ETH, `status: fille
 re-syncs its ledger to venue truth after every sweep. The venue route is capability-aware:
 the demo environment lists tokenized stocks as `status:"halt"` / region-restricted, so VIGIL
 detects that from the venue's own symbol list and routes those legs to an explicitly
-labelled `paper-fallback` fill rather than pretending they were venue-executed. Still
-pending: the Qwen sponsor key (KYC credit).
+labelled `paper-fallback` fill rather than pretending they were venue-executed.
+**The decision-maker is now Bitget Qwen `qwen3.8-max`** — the sponsor's own model, wired
+through the OpenAI-compatible seam and recorded in the signed log as `qwen3.8-max @
+bitget-qwen`.
 **Frameworks/APIs:** node:sqlite, node:http, Bitget UTA v3 (public market data + signed
 spot trading in the demo environment via `PAPTRADING:1`), Bitget market-data MCP, an
 OpenAI-compatible LLM endpoint.
@@ -104,9 +106,8 @@ A **real LLM is the decision-maker** (not an assistant). It runs through an
 OpenAI-compatible seam (`src/llm.js`): it receives the live portfolio state (NAV, cash,
 drawdown, holdings with 24h moves) plus the overnight perception (Fear & Greed, top
 headlines), and returns `{trigger, rationale, orders}`. The hard risk layer then gates
-and sizes those orders. The agent is running today on **Gemini 3.6 Flash** (`VIGIL_LLM=live`)
-and records `model: gemini-3.6-flash @ …` in its signed decision log with genuine
-model-written rationales — verifiable live at `GET /api/decisions`. Bitget **Qwen
-`qwen3.8-max`** (sponsor endpoint `hackathon.bitgetops.com`) is a one-var swap
-(`VIGIL_LLM=qwen` + the KYC-provisioned key) on the identical seam and loop; the log
-will then record the Qwen model id and provider.
+and sizes those orders. The agent is running today on **Bitget Qwen `qwen3.8-max`** (`VIGIL_LLM=qwen`, sponsor
+endpoint `hackathon.bitgetops.com/v1`) and records `model: qwen3.8-max @ bitget-qwen` in its
+signed decision log with genuine model-written rationales — verifiable live at
+`GET /api/decisions`. The seam is a one-var swap to any OpenAI-compatible provider
+(e.g. Gemini 3.6 Flash) if the sponsor key is unavailable.

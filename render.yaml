@@ -14,17 +14,16 @@ services:
       # paper-fallback legs; crypto is venue-filled.
       - key: VIGIL_EXEC
         value: bitget
-      # Decision-maker: a REAL LLM (Agentic Trading track requires the LLM to decide).
-      # Gemini via the OpenAI-compatible seam; Qwen (sponsor) is a one-var swap:
-      #   VIGIL_LLM=qwen + VIGIL_QWEN_API_KEY (KYC-provisioned)
+      # Decision-maker: Qwen (sponsor) wired to the OpenAI-compatible seam.
+      # VIGIL_LLM=qwen + VIGIL_QWEN_API_KEY (KYC-provisioned hackathon key).
       - key: VIGIL_LLM
-        value: live
-      - key: VIGIL_LLM_BASE_URL
-        value: https://generativelanguage.googleapis.com/v1beta/openai
-      - key: VIGIL_LLM_MODEL
-        value: gemini-3.6-flash
-      - key: VIGIL_LLM_API_KEY
+        value: qwen
+      - key: VIGIL_QWEN_API_KEY
         sync: false
+      - key: VIGIL_LLM_BASE_URL
+        value: https://hackathon.bitgetops.com/v1
+      - key: VIGIL_LLM_MODEL
+        value: qwen3.8-max
       # Bitget demo-venue credentials (paper-trading env, Read+Trade, no withdraw).
       - key: VIGIL_BITGET_API_KEY
         sync: false

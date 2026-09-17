@@ -199,11 +199,11 @@ market.js (Bitget rToken+crypto)      perception.js (Bitget MCP + RSS + F&G)
 
 - **Live data (verified)**: rToken + crypto prices from Bitget's public API (real, moving);
   news (Bitget MCP + Cointelegraph/BBC RSS) + Fear & Greed (alternative.me) — real signals.
-- **Live decision-maker (verified)**: the LLM is a REAL model wired through an OpenAI-compatible
-  seam (`Gemini 3.6 Flash` runs it today via `VIGIL_LLM=live`); the running agent's log records
-  `model: gemini-3.6-flash @ …` with genuine model-written rationales over live state. Bitget
-  **Qwen** (`qwen3.8-max`) is a one-var swap (`VIGIL_LLM=qwen` + key) once the sponsor credit is
-  provisioned — same seam, same loop.
+- **Live decision-maker (verified)**: the decision-maker is **Bitget Qwen `qwen3.8-max`**
+  (`VIGIL_LLM=qwen`, sponsor endpoint `hackathon.bitgetops.com/v1`, KYC key) recorded in the
+  signed log as `model: qwen3.8-max @ bitget-qwen`. A must-reason-with-live-model requirement
+  is met by the sponsor's own model. (Pre-key, the same seam ran Gemini 3.6 Flash as a
+  drop-in; the log records whichever model was wired.)
 - **Paper execution by sanctioned rules**: orders settle on a cash-correct paper ledger at the
   live market price (fees + slippage applied). This is what the Agentic Trading track explicitly
   permits (`simulated or paper trading acceptable`). Real-venue execution is a Bitget
