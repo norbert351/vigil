@@ -1,7 +1,7 @@
 # VIGIL — Bitget AI Hackathon S2 · Submission draft
 
 **Track:** Agentic Trading · **Sub-theme:** Cross-Asset Execution Agent
-**Repo:** https://github.com/norbert351/vigil · **Deadline:** 9/21 (UTC+8)
+**Repo:** https://github.com/norbert351/vigil · **Deadline:** 9/27 (UTC+8) · **Track:** Agentic Trading · **Sub-theme:** Cross-Asset Execution Agent
 
 ---
 

@@ -55,6 +55,19 @@ npm start            # http://localhost:8080 (paper ledger, stub LLM)
 npm test             # 34 tests: engine / risk / executor / db / llm
 ```
 
+## Documentation
+
+- **`ARCHITECTURE.md`** — system diagram, the core value flow, and the
+  "after removing <sponsor stack>" counterfactual table.
+- **`docs/TECHNICAL.md`** — full technical reference: stack, decision pipeline, data model,
+  API surface, test suite, honest status.
+- **`docs/rubric.md`** — the judge-verification map: every Track 2 judging criterion mapped
+  to exact evidence (files, endpoints, commands).
+- **`docs/ROADMAP.md`** — where VIGIL goes next.
+- **`docs/SUBMISSION.md`** — paste-ready answers to the official entry form.
+- **`docs/paper-log/vigil-decision-log.csv`** — the signed, audited paper-trading log
+  (refreshed automatically).
+
 ## Execution modes
 
 | Mode | `VIGIL_EXEC` | What happens |

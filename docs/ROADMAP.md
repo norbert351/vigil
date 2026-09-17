@@ -1,7 +1,7 @@
 # VIGIL — Product Roadmap
 
 **Status:** Bitget AI Hackathon S2 · Agentic Trading · Cross-Asset Execution Agent
-**Deadline:** 9/21 · **Repo:** github.com/norbert351/vigil · **Live:** vigil-mg0m.onrender.com
+**Deadline:** 9/27 (UTC+8, per live event page) · **Repo:** github.com/norbert351/vigil · **Live:** vigil-mg0m.onrender.com
 
 ---
 
@@ -58,7 +58,9 @@
 
 ### 1. Audit analytics dashboard
 Rejection-rate over time, which rules fire most, and the counterfactual "what would the rejected plan have cost?" — turns the audit from a per-row verdict into evidence that the reviewer adds value.
-**Gate:** needs ≥20 audited decisions to be meaningful.
+**Gate: CLEARED.** The ≥20-audited-decisions bar was reached on 2026-09-17 (the committed log
+carries 280+ audited decisions). This is now the highest-value next builder: the audit data is
+real and ready to become a judge-quantifiable evidence chart.
 
 ### 2. Multi-venue execution (OKX / Hyperliquid)
 The venue client is already a factory (`createVenueClient`) — a second adapter would prove the architecture generalises beyond one exchange and hedge venue-specific halts.

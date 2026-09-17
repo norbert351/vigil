@@ -93,7 +93,7 @@ async function route(req, res) {
   const m = req.method;
   if (m === "OPTIONS") { res.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" }); return res.end(); }
 
-  if (m === "GET" && p === "/health") return json(res, 200, { ok: true, name: "vigil", execution: EXECUTION_MODE, llm: LLM_MODE, deadline: "2026-09-21T00:00:00+08:00", track: "Agentic Trading", subtheme: "Cross-Asset Execution Agent" });
+  if (m === "GET" && p === "/health") return json(res, 200, { ok: true, name: "vigil", execution: EXECUTION_MODE, llm: LLM_MODE, deadline: "2026-09-27T00:00:00+08:00", track: "Agentic Trading", subtheme: "Cross-Asset Execution Agent" });
 
   if (m === "GET" && p === "/api/universe") return json(res, 200, { universe: UNIVERSE });
 
