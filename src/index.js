@@ -10,6 +10,7 @@ import { refreshPrices } from "./market.js";
 import { portfolioState } from "./engine.js";
 import { runSweep, agentBus, currentWindow } from "./agent.js";
 import { startPerceptionLoop, latestPerception } from "./perception.js";
+import { usQuote, usHistory, usTickerFor, usQuotesFor } from "./us_mcp.js";
 import { runBacktest } from "./backtest.js";
 import { buildReport, renderReportHtml } from "./report.js";
 import { buildLeaderboard } from "./leaderboard.js";
@@ -30,9 +31,15 @@ const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".
 const db = openDB();
 
 function json(res, code, body) {
+  let out;
+  try { out = JSON.stringify(body, replacer); }
+  catch { out = JSON.stringify({ error: "unserializable response" }); }
+  if (res.headersSent) { res.end(out); return; } // never double-write headers
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" });
-  res.end(JSON.stringify(body));
+  res.end(out);
 }
+// BigInt-safe serialization (the dryRun/nav paths carry BigInt micro values).
+function replacer(_k, v) { return typeof v === "bigint" ? v.toString() : v; }
 
 function readBody(req, cap = 1_000_000) {
   return new Promise((resolve, reject) => {
@@ -110,6 +117,33 @@ async function route(req, res) {
     } catch (e) { return json(res, 500, { error: String(e.message || e) }); }
   }
 
+  // Official Bitget Agent Hub US stock/ETF data MCP (Dev Toolkit) — read-only, no key.
+  if (m === "GET" && p === "/api/us-market") {
+    const q = url.searchParams;
+    const sym = (q.get("symbol") || "TSLA").toUpperCase();
+    const quote = await usQuote(sym);
+    return json(res, 200, { symbol: sym, quote: quote || { error: "bitget-mcp-server quote unavailable" } });
+  }
+
+  if (m === "GET" && p === "/api/us-history") {
+    const q = url.searchParams;
+    const sym = (q.get("symbol") || "TSLA").toUpperCase();
+    const days = Math.min(Math.max(Number(q.get("days") || 60), 10), 180);
+    const end = new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 10);
+    const start = new Date(Date.now() - (days + 15) * 864e5).toISOString().slice(0, 10);
+    const rows = await usHistory(sym, start, end);
+    return json(res, 200, { symbol: sym, days: rows.length, start, end, rows });
+  }
+
+  // US quotes for the whole rToken universe (mapped by key -> ticker) for cross-check.
+  if (m === "GET" && p === "/api/us-universe") {
+    const keys = Object.keys(await refreshPrices(false));
+    const quotes = await usQuotesFor(keys);
+    const map = {};
+    for (const k of keys) { const t = usTickerFor(k); if (t) map[k] = { ticker: t, quote: quotes[k] || null }; }
+    return json(res, 200, { source: "bitget-mcp-server", symbols: map });
+  }
+
   if (m === "GET" && p === "/api/equity") {
     const curve = equityCurve(db, 5000).map((r) => ({ ts: r.ts, nav: Number(r.nav_micro) / 1e6, cash: Number(r.cash_micro) / 1e6 }));
     return json(res, 200, { observations: curve.length, curve });
@@ -150,6 +184,15 @@ async function route(req, res) {
 
   if (m === "POST" && p === "/api/run") {
     try { const r = await runSweep(db, { force: true }); return json(res, 200, r); }
+    catch (e) { return json(res, 500, { error: String(e.message || e) }); }
+  }
+
+  // Developer Toolkit `dryRun`: preview the plan (sense→reason→audit→orders) without
+  // placing orders or writing the ledger. GET /api/run?dry=1
+  if (m === "GET" && p === "/api/run") {
+    const dry = url.searchParams.get("dry") === "1" || url.searchParams.get("dry") === "true";
+    if (!dry) return json(res, 405, { error: "use POST for a real sweep, or GET /api/run?dry=1 to preview" });
+    try { const r = await runSweep(db, { force: true, dryRun: true }); return json(res, 200, r); }
     catch (e) { return json(res, 500, { error: String(e.message || e) }); }
   }
 

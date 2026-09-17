@@ -22,6 +22,15 @@
 - **Night timeline** (`/night`) — headlines + decisions + fills aligned with the NAV curve on one axis
 - **Sleep report** (`/reports/latest`) — auto-generated morning digest with LLM narration
 
+### Dev Toolkit alignment (this round)
+- **bitget-mcp-server** (`agent.bitget.com/mcp`, read-only, no key) wired as the US stock/ETF
+  data layer: `/api/us-market`, `/api/us-history`, `/api/us-universe` cross-check every rToken
+  against its live US quote; backtest prefers real US-MCP daily closes.
+- **`dryRun`**: `GET /api/run?dry=1` previews sense→reason→orders→audit without writing the
+  ledger (toolkit: "any write can be previewed with dryRun").
+- **Qwen sponsor endpoint** (`hackathon.bitgetops.com/v1`) as the live decision-maker.
+- Sleep-report narration now follows the configured LLM seam (Qwen), not a hard-coded Gemini URL.
+
 ### Multi-session platform
 - Isolated ledger + sweep loop per connected book; owner-key auth on every mutating route
 - AES-256-GCM credential storage, per-IP rate cap, 8-session capacity, **live-account keys rejected**, one-account-one-agent guard

@@ -5,6 +5,7 @@
 import { UNIVERSE } from "./config.js";
 import { planOrders } from "./risk.js";
 import { crossAssetRegime } from "./regime.js";
+import { usHistory, usTickerFor } from "./us_mcp.js";
 
 const TICKER = "https://api.bitget.com/api/v2/spot/market/candles";
 
@@ -37,11 +38,32 @@ async function fetchSeries(days) {
   for (const u of UND) {
     if (u.crypto) { priceMap[u.key] = btc.map(() => NaN); continue; } // crypto keys not btc/eth handled below
   }
-  // ETH + rTokens fetched by their own symbol
+  // ETH + rTokens fetched by their own symbol. US equities prefer the official
+  // bitget-mcp-server daily closes (Dev Toolkit: use it for US stock backtests),
+  // falling back to Bitget rToken candles if the MCP is unreachable or sparse.
   for (const u of UND.filter((x) => (x.crypto ? x.key !== "btc" : true))) {
     if (u.crypto && u.key === "btc") continue;
+    const sym = symbolFor(u);
+    const ticker = usTickerFor(u.key);
+    let closes = null;
+    if (ticker) {
+      const today = new Date();
+      const start = new Date(today.getTime() - (days + 15) * 864e5).toISOString().slice(0, 10);
+      const end = new Date(today.getTime() + 2 * 864e5).toISOString().slice(0, 10);
+      try {
+        const rows = await usHistory(ticker, start, end);
+        const per = new Map(rows.map((r) => [r.ts, r.close]));
+        for (const t of daysList) {
+          const hit = rows.find((x) => Math.abs(x.ts - t) <= 36e5 * 24);
+          per.set(t, hit ? hit.close : per.get(t));
+        }
+        const mapped = daysList.map((t) => (per.has(t) && Number.isFinite(per.get(t)) ? per.get(t) : NaN));
+        closes = mapped.filter((v) => Number.isFinite(v)).length >= Math.floor(days * 0.5) ? mapped : null;
+      } catch { closes = null; }
+    }
+    if (closes) { priceMap[u.key] = closes; continue; }
     try {
-      const c = await getCandles(symbolFor(u), days);
+      const c = await getCandles(sym, days);
       const per = new Map(c.map((x) => [x.ts, x.close]));
       priceMap[u.key] = daysList.map((t) => {
         const hit = c.find((x) => Math.abs(x.ts - t) <= 36e5);

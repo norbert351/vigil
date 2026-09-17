@@ -345,3 +345,51 @@ test("agent loop: auditor PASSES a conservative LLM plan and it executes", async
   assert.equal(dec.review_verdict, "pass", `reason=${dec.review_rationale}`);
   assert.ok(logged.some((o) => o.action === "BUY" && o.key === "rspy"), "approved order should execute");
 });
+
+// --- US data MCP (official Bitget Agent Hub Dev Toolkit) ----
+import { usQuote, usHistory, usTickerFor } from "../src/us_mcp.js";
+
+test("usTickerFor maps rToken keys to US tickers, null for crypto", () => {
+  assert.equal(usTickerFor("rtsla"), "TSLA");
+  assert.equal(usTickerFor("rnvda"), "NVDA");
+  assert.equal(usTickerFor("rqqq"), "QQQ");
+  assert.equal(usTickerFor("btc"), null);
+  assert.equal(usTickerFor("eth"), null);
+});
+
+test("usQuote returns a normalized micro-USD quote from bitget-mcp-server (network-tolerant)", async () => {
+  const q = await usQuote("TSLA", { signalMs: 20_000 });
+  if (!q) { console.log("SKIP: bitget-mcp-server unreachable"); return; } // tolerant
+  assert.equal(q.source, "bitget-mcp-server");
+  assert.equal(q.symbol, "TSLA");
+  assert.ok(Number(q.lastMicro) > 0, "has a last price");
+  assert.ok(q.lastMicro > 100_000_000, "TSLA last price in a sane micro-USD range");
+});
+
+test("usHistory returns daily OHLCV rows from bitget-mcp-server (network-tolerant)", async () => {
+  const rows = await usHistory("TSLA", "2026-08-15", "2026-09-10");
+  if (!rows.length) { console.log("SKIP: bitget-mcp-server unreachable"); return; }
+  assert.ok(rows.length >= 10, "got a useful daily history");
+  assert.ok(rows.every((r) => r.close > 0 && typeof r.ts === "number"));
+});
+
+// --- DRY-RUN: preview the plan without executing or writing the ledger ---
+test("agent loop: dryRun previews a plan WITHOUT executing or writing the ledger", async () => {
+  const db = freshDb();
+  setPosition(db, "rtsla", 10_000_000n, 359_770_000n);
+  setCash(db, 8_000_000_000n);
+  const before = listDecisions(db, 1000).length;
+  const probe = {
+    mode: "live", model: "test-model", provider: "test",
+    decide: async () => ({ trigger: "rebalance", rationale: "dry", orders: [{ action: "BUY", key: "rspy", usdMicro: 500_000_000 }] }),
+    review: reviewStub,
+  };
+  const r = await runSweep(db, { execMode: "paper", dryRun: true, llm: probe });
+  assert.equal(r.dryRun, true, "flagged as a preview");
+  assert.ok(Array.isArray(r.orders), "exposes proposed orders");
+  assert.ok(r.prices, "exposes the price snapshot it reasoned on");
+  // no decision was logged, no ledger write
+  assert.equal(listDecisions(db, 1000).length, before, "dryRun writes no decision");
+  const nav = Number(portfolioState(flatPositions(db), PX).total) + Number(getCash(db));
+  assert.equal(nav, 3597700000 + 8000000000, "ledger untouched (cash+position unchanged)");
+});

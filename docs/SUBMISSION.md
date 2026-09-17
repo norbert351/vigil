@@ -73,7 +73,7 @@ a **LIVE LLM decision-maker** (OpenAI-compatible seam; the sponsor's **Bitget Qw
 `qwen3.8-max`** is wired and running via `VIGIL_LLM=qwen`, same seam and loop), hard risk layer
 (night-mode + Fear-regime rotation), cash-correct paper executor (fees + slippage),
 signed-manifest ledger with bound context, equity-curve + Sharpe/max-DD/win-rate
-analytics, HTTP/SSE dashboard, **15/15 tests green**, public repo, fresh clone verified
+analytics, HTTP/SSE dashboard, **34/34 tests green**, public repo, fresh clone verified
 to boot, **and real venue execution live on Bitget's paper-trading environment** — VIGIL
 places signed UTA v3 spot market orders (verified fills: BTC/ETH, `status: filled`) and
 re-syncs its ledger to venue truth after every sweep. The venue route is capability-aware:
@@ -84,8 +84,10 @@ labelled `paper-fallback` fill rather than pretending they were venue-executed.
 through the OpenAI-compatible seam and recorded in the signed log as `qwen3.8-max @
 bitget-qwen`.
 **Frameworks/APIs:** node:sqlite, node:http, Bitget UTA v3 (public market data + signed
-spot trading in the demo environment via `PAPTRADING:1`), Bitget market-data MCP, an
-OpenAI-compatible LLM endpoint.
+spot trading in the demo environment via `PAPTRADING:1`), Bitget market-data MCP, **the
+official Agent Hub `bitget-mcp-server`** (`agent.bitget.com/mcp`, read-only US stock/ETF
+quotes + history backing the rToken universe and backtests), an OpenAI-compatible LLM
+endpoint (Bitget Qwen `qwen3.8-max`).
 
 ### Part 5 · Deliverables (in Submission Materials Link)
 - Public **GitHub repo** (code, tests, render.yaml, README)

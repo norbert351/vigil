@@ -45,30 +45,55 @@ async function narrate(facts, llm) {
 
   if (llm && llm.mode !== "stub") {
     try {
-      const body = JSON.stringify({
-        model: llm.model,
-        messages: [
-          { role: "system", content: "You narrate an autonomous trading agent's overnight report in 3-4 plain, confident sentences. No jargon, no disclaimers, no bullet points." },
-          { role: "user", content: `Overnight facts: ${summary}\n\nWrite the 'night in plain language' paragraph.` },
-        ],
-        temperature: 0.4,
-        max_tokens: 400,
-      });
-      const url = `${(process.env.VIGIL_LLM_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai").replace(/\/+$/, "")}/chat/completions`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.VIGIL_LLM_API_KEY}` },
-        body, signal: AbortSignal.timeout(30_000),
-      });
-      if (res.ok) {
-        const j = await res.json();
-        const text = (j?.choices?.[0]?.message?.content || "").trim();
-        if (text) return { narration: text, model: `${llm.model} (narration)` };
+      // Resolve the live endpoint from the SAME seam as the decision-maker so the
+      // narration follows the configured model (Qwen sponsor / any OpenAI-compatible).
+      // Do NOT hard-code a Gemini URL: under VIGIL_LLM=qwen the key is VIGIL_QWEN_API_KEY.
+      const { baseUrl, model, key } = llmProvider();
+      if (baseUrl && model && key) {
+        const body = JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: "You narrate an autonomous trading agent's overnight report in 3-4 plain, confident sentences. No jargon, no disclaimers, no bullet points." },
+            { role: "user", content: `Overnight facts: ${summary}\n\nWrite the 'night in plain language' paragraph.` },
+          ],
+          temperature: 0.4,
+          max_tokens: 400,
+        });
+        const url = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+          body, signal: AbortSignal.timeout(30_000),
+        });
+        if (res.ok) {
+          const j = await res.json();
+          const text = (j?.choices?.[0]?.message?.content || "").trim();
+          if (text) return { narration: text, model: `${model} (narration)` };
+        }
       }
     } catch { /* fall through to deterministic */ }
   }
   return { narration: summary, model: "deterministic" };
 }
+
+// Resolve base URL / model / API key for the current LLM mode (mirror of llm.js factory).
+function llmProvider() {
+  const mode = String(LLM_MODE() || "stub").toLowerCase();
+  if (mode === "qwen") {
+    return {
+      baseUrl: process.env.VIGIL_QWEN_BASE || "https://hackathon.bitgetops.com/v1",
+      model: process.env.VIGIL_QWEN_MODEL || "qwen3.8-max",
+      key: process.env.VIGIL_QWEN_API_KEY || "",
+    };
+  }
+  // live / any OpenAI-compatible endpoint
+  return {
+    baseUrl: process.env.VIGIL_LLM_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai",
+    model: process.env.VIGIL_LLM_MODEL || "qwen3.8-max",
+    key: process.env.VIGIL_LLM_API_KEY || "",
+  };
+}
+function LLM_MODE() { return process.env.VIGIL_LLM || "stub"; }
 
 // Full report (JSON facts + narration). Facts are always exact from the ledger.
 export async function buildReport(db, opts = {}) {

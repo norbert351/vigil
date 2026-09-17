@@ -52,7 +52,7 @@ Every cycle (~5 min) the agent:
 ```bash
 npm install
 npm start            # http://localhost:8080 (paper ledger, stub LLM)
-npm test             # 15 tests: engine / risk / executor / db / llm
+npm test             # 34 tests: engine / risk / executor / db / llm
 ```
 
 ## Execution modes
@@ -117,7 +117,7 @@ npm start
 | `VIGIL_SLIPPAGE_BPS` | 2 | slippage (bps) |
 | `VIGIL_REGIME_FEAR` | 35 | Fear & Greed below → defensive tilt |
 
-Tests: `node --test` (15 specs — valuation, signed manifests, night-mode breaker, kill-switch,
+Tests: `node --test` (34 specs — valuation, signed manifests, night-mode breaker, kill-switch,
 Fear-regime rotation, cash-funded buys (no overdraft), fee/slippage, sell-proceeds rotation,
 equity-curve analytics, decision log, stub policy).
 
@@ -129,11 +129,28 @@ equity-curve analytics, decision log, stub policy).
 `GET /api/metrics` (Sharpe/maxDD/win-rate/realized P&L) · `GET /api/equity` (NAV curve) ·
 `GET /api/backtest?days=90` (real-data strategy backtest) · `GET /api/decisions` (each with `review_verdict`) ·
 `GET /api/decision-log.csv` · `GET /api/report` · `GET /api/night-timeline?hours=24` · `GET /api/alerts` ·
-`GET /api/leaderboard` · `POST /api/run` ·
+`GET /api/leaderboard` · `POST /api/run` · `GET /api/run?dry=1` (dryRun preview) ·
+`GET /api/us-market?symbol=TSLA` · `GET /api/us-history?symbol=NVDA&days=30` · `GET /api/us-universe` ·
 `POST /api/kill {on:true|false}` (halt/resume) · `GET /api/agent/stream` (SSE) · `GET /`.
 
 **Multi-session (Connect):** `GET/POST /api/sessions` · `GET /api/sessions/:id/{state,decisions,metrics,alerts,timeline,log.csv}` ·
 `POST /api/sessions/:id/{run,kill}` (owner-key header `X-VIGIL-OWNER`).
+
+## Bitget Agent Hub / Developer Toolkit alignment
+
+VIGIL is built directly on the Dev Toolkit's surface:
+
+| Toolkit item | VIGIL usage |
+|---|---|
+| **Bitget Agent Hub** — US-stock focus | Official **`bitget-mcp-server`** (`agent.bitget.com/mcp`, read-only, no key) is the US equity data layer — quotes, history, fundamentals for the rToken universe. |
+| **Agentic Trading safe-mode** | Overnight `paper` (default) and `VIGIL_EXEC=bitget` (Demo venue, PAPTRADING:1) routes; `?dry=$1` previews any plan without writing the ledger. |
+| **`dryRun`** | `GET /api/run?dry=1` computes sense→reason→orders→audit and returns the plan without executing — same semantics as the toolkit's `dryRun` ("any write can be previewed"). |
+| **Qwen sponsor** | `qwen3.8-max` via `hackathon.bitgetops.com/v1` is the decision-maker (`VIGIL_LLM=qwen`). |
+| **bitget-mcp-server for backtests** | `src/backtest.js` prefers real US-MCP daily closes for US equities, falling back to Bitget rToken candles. |
+
+**US data endpoint:** `GET /api/us-universe` cross-checks every rToken against its live
+bitget-mcp-server quote; `GET /api/us-market?symbol=TSLA` and `GET /api/us-history?symbol=NVDA`
+expose per-symbol quotes and OHLCV history.
 
 ## Two-model decision audit
 
@@ -208,7 +225,7 @@ market.js (Bitget rToken+crypto)      perception.js (Bitget MCP + RSS + F&G)
   live market price (fees + slippage applied). This is what the Agentic Trading track explicitly
   permits (`simulated or paper trading acceptable`). Real-venue execution is a Bitget
   Demo/Agentic API key away — the seam (`EXECUTION_MODE=bitget`) is already present.
-- **Tested**: 15/15 specs (cash funding, no-overdraft, fee/slippage, sell-proceeds rotation,
+- **Tested**: 34/34 specs (cash funding, no-overdraft, fee/slippage, sell-proceeds rotation,
   night breaker, Fear rotation, kill-switch, equity analytics, decision log).
 
 *Not financial advice. Novel-aggressive strategy; no capital at risk in paper mode.*

@@ -94,16 +94,19 @@ function decisionContext(state, perception) {
 function llmModel(llm) { return llm.provider && llm.mode !== "stub" ? [llm.model, llm.provider].filter(Boolean).join(" @ ") : "deterministic-stub"; }
 
 // One decision cycle.
-export async function runSweep(db, { force = false, venue, execMode, webhook, llm: llmOverride } = {}) {
+export async function runSweep(db, { force = false, venue, execMode, webhook, dryRun = false, llm: llmOverride } = {}) {
+  const t0 = Date.now(); const trace = (m) => (dryRun ? console.error("[dryRun trace]", m, Date.now() - t0, "ms") : 0);
   const mode = execMode || EXECUTION_MODE;
   const prices = await refreshPrices(true);
-  saveSnapshot(db, JSON.stringify(prices));
+  trace("prices");
+  if (!dryRun) saveSnapshot(db, JSON.stringify(prices));
   // NAV before this sweep — used by the break-glass alert layer
   let prevNav = 0;
   try { const c = equityCurve(db, 5); if (c.length) prevNav = Number(c[c.length - 1].nav_micro); } catch { /* fresh */ }
   const venueMode = mode === "bitget";
   // bitget mode: the venue IS the account — sync ledger from venue truth, no paper seed.
-  if (venueMode) {
+  // (In dryRun mode, skip syncs/seeding so the preview never mutates state.)
+  if (venueMode && !dryRun) {
     try {
       await syncLedgerFromVenue(db, prices, venue);
       // a fresh venue account with zero positions starts the peak at current balance
@@ -114,7 +117,7 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, ll
       }
     } catch (e) { console.error("venue sync", e.message); }
   }
-  const seeded = venueMode ? false : await maybeSeed(db, DEFAULT_TARGETS, prices);
+  const seeded = venueMode ? false : (!dryRun && await maybeSeed(db, DEFAULT_TARGETS, prices));
   const state = await buildState(db);
   const perception = latestPerception();
   state.perception = perception;
@@ -130,11 +133,18 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, ll
   });
 
   // LLM discretionary decision (ignored entirely if breaker / killed)
+  // In dryRun (preview) mode the LLM call is time-boxed so the endpoint returns fast
+  // even under high load — a preview needs the plan, not a full reasoning session.
   let llmDecision = null;
   if (!risk.breaker && !state.killed) {
     try {
       const stateForLlm = { ...state, perception, breaker: risk.breaker, killed: state.killed, window: state.window };
-      llmDecision = await llm.decide(stateForLlm);
+      llmDecision = dryRun
+        ? await Promise.race([
+            llm.decide(stateForLlm),
+            new Promise((resolve) => setTimeout(() => resolve(null), 12_000)),
+          ])
+        : await llm.decide(stateForLlm);
       llmDecision = sanitizeDecision(llmDecision);
     } catch (e) { llmDecision = null; }
   }
@@ -145,6 +155,8 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, ll
   // mechanical, cap-enforced layer). The verdict + reason ride into every signed
   // decision, so every real execution is independently audited.
   // Fail-closed: if the reviewer cannot produce a verdict, discretionary legs are withheld.
+  // (In dryRun we skip the audit second-call — it is an execution-time gate, not a preview.)
+  const runAudit = !dryRun;
   let orders;
   let review = null;
   if (risk.breaker || state.killed) {
@@ -152,7 +164,7 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, ll
   } else {
     const llmOrders = (llmDecision?.orders || []).map((o) => ({ action: o.action, key: o.key, usdMicro: Math.round(Number(o.usdMicro || 0)), reason: "llm-" + (o.action || "hold") })).filter((o) => o.usdMicro >= 100_000);
     const merged = mergeOrders(risk.orders, llmOrders, state);
-    if (merged.length > 0) {
+    if (runAudit && merged.length > 0) {
       const fullPlan = [...llmOrders, ...risk.orders]; // union: the auditor sees every proposed leg
       try {
         review = await llm.review({ state, decision: { orders: fullPlan } });
@@ -165,7 +177,7 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, ll
         review = { verdict: "reject", reason: `reviewer unavailable (${e.message}) — fail-closed`, unavailable: true };
       }
     } else {
-      orders = merged;
+      orders = merged; // dryRun (no audit second-call) or nothing to audit
     }
   }
 
@@ -173,6 +185,19 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, ll
   const navMicro = BigInt(Math.round(state.nav));
   const trigger = risk.breaker ? "risk" : state.killed ? "killed" : (llmDecision?.trigger || (orders.filter((o) => o.action && o.action !== "HOLD").length ? "rebalance" : "hold"));
   const rationale = risk.breaker ? risk.rationale : state.killed ? "Kill-switch armed — averted." : ((llmDecision?.rationale || risk.rationale || ""));
+
+  // DRY-RUN: preview the plan the agent WOULD execute — sense→reason→audit→orders —
+  // without touching the ledger, emitting alerts, or placing any order. Mirrors the
+  // Developer Toolkit's `dryRun` (any write can be previewed before it happens).
+  if (dryRun) {
+    trace("dryRun-return");
+    return {
+      dryRun: true, window: state.window, navMicro, trigger, rationale,
+      orders, review, prices: state.prices,
+      breaker: risk.breaker, killed: state.killed,
+      warning: "Preview only — no orders placed and no ledger writes.",
+    };
+  }
 
   if (orders.length === 0) {
     const holdTrigger = state.killed ? "killed" : risk.breaker ? "risk" : "hold";

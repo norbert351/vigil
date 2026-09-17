@@ -67,6 +67,9 @@ export const QWEN_MODEL = process.env.VIGIL_QWEN_MODEL || "qwen3.8-max";
 // ---- sources ----
 export const BITGET_TICKERS_URL = "https://api.bitget.com/api/v2/spot/market/tickers?productType=spot";
 export const DATDHUB_MCP_URL = process.env.VIGIL_MCP_URL || "https://datahub.noxiaohao.com/mcp";
+// Official Bitget Agent Hub US stock/ETF read-only data MCP (Dev Toolkit):
+// https://agent.bitget.com/mcp — quotes, history, fundamentals. No API key.
+export const US_MCP_URL = process.env.VIGIL_US_MCP_URL || "https://agent.bitget.com/mcp";
 
 // Curated tradeable universe. `bitget: 'TSLA'` means symbol RTSLAUSDT on Bitget; `crypto: true`
 // means the raw BTCUSDT pair. We resolve to the live exact symbol at boot from the ticker feed.
