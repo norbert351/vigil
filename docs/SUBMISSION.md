@@ -58,7 +58,15 @@ paper-trading record starting **Sep 14**. **Metrics are computed live at `GET /a
 (Sharpe from the `equity_curve`, max drawdown, win rate + realized P&L from closed SELLs, trade
 count) — the exact numbers the judge can pull from the running agent. **Targets (labeled):**
 >0.5 Sharpe, max-drawdown <8% (the breaker enforces 10% by day, 5% at night), a decision-dense
-log (>200 logged cycles), and documented rotation trades when Fear-regime / target-drift fires.
+>log (>200 logged cycles), and documented rotation trades when Fear-regime / target-drift fires.
+**Honest caveat on the trade-level win-rate/realized-P&L:** these derive from order-level P&L
+computed against a *cost basis that the venue re-sync approximates at the current price*
+(so a close-to-market sell reads as a ≈full-notional positive P&L), which pushes the win rate
+toward 1.0 and inflates realized P&L on the venue-demo book. **The NAV-based measures are the
+defensible ones** — Sharpe and max drawdown come from the signed `equity_curve` (NAV = cash +
+positions at live prices) and are unaffected by the basis approximation. Realized P&L on the
+committed paper book is exact (cash-correct, fees + slippage); the venue-demo win-rate is
+labelled optimistic until real cost-basis replay is wired.
 **In addition, a real 90-day historical backtest** (`GET /api/backtest`, actual Bitget daily
 klines + historical Fear & Greed, fees + slippage applied) validates the strategy's
 Sharpe/max-DD/regime behavior as supporting evidence.
