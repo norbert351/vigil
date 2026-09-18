@@ -232,7 +232,7 @@ market.js (Bitget rToken+crypto)      perception.js (Bitget MCP + RSS + F&G)
   KPIs, holdings, signed decision log with audit verdicts) · `/night` (event-aligned timeline)
   · `/leaderboard` · `/reports/latest`. The deployed ledger is **persistent on Neon
   (`VIGIL_DATABASE_URL` → `vigil` schema)**, so the demo keeps its full history across redeploys.
-- **Demo video:** https://vigil-mg0m.onrender.com/vigil-demo.mp4 (44s, live take) ·
+- **Demo video:** https://vigil-mg0m.onrender.com/vigil-demo.mp4 (66s, live take, Christopher-voiced) ·
   repo copy `docs/demo/vigil-demo.mp4` · re-recording driver `demo/driver.cjs`.
 - **Paper-trading log:** committed `docs/paper-log/vigil-decision-log.csv` (auto-refreshed by
   the `vigil-paperlog-snapshot` cron) + live `GET /api/decision-log.csv`.

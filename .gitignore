@@ -28,3 +28,12 @@ demo/mix.wav
 demo/nar.wav
 demo/timeline.json
 demo/final_web.mp4
+demo/v2/raw.mp4
+demo/v2/cut.mp4
+demo/v2/extended.mp4
+demo/v2/mix.wav
+demo/v2/nar.wav
+demo/v2/bed.wav
+demo/v2/n*.mp3
+demo/v2/*.mp4
+demo/v2/timeline.json
