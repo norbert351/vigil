@@ -117,6 +117,25 @@ test("executor deducts fee + slippage on buys", async () => {
   assert.ok(order.pxMicro >= PX.rspy.lastMicro, "buy paid slippage");
 });
 
+test("cost basis is per-unit scale: a round-trip sell at cost yields ~0 pnl, not full notional", async () => {
+  const db = freshDb();
+  setCash(db, 1_000_000_000n); // $1000
+  // BUY $500 of rspy (~$759/unit)
+  await executeOrders(db, { orders: [{ action: "BUY", key: "rspy", usdMicro: 500_000_000 }], trigger: "rebalance", rationale: "t", window: "day", model: "stub", llm: "stub", prices: PX, navMicro: 1e10, context: null });
+  const held = (flatPositions(db).rspy || 0n);
+  assert.ok(held > 0n, "bought rspy");
+  // avgCost stored in per-UNIT micro scale (same order as px_micro ~759e6), not price/1e6 (~759)
+  const avg = getPositions(db).rspy.avgCost;
+  assert.ok(avg > 300_000_000n && avg < 3_000_000_000n, `avgCost per-unit scale, got ${avg}`);
+  // SELL the whole position at the same price -> pnl ~= 0 (slippage/fee only), never ~full notional
+  const res = await executeOrders(db, { orders: [{ action: "SELL", key: "rspy", usdMicro: 1_000_000_000_000 }], trigger: "risk", rationale: "t", window: "day", model: "stub", llm: "stub", prices: PX, navMicro: 1e10, context: null });
+  const sellRow = res.executed.find((o) => o.action === "SELL");
+  assert.ok(sellRow, "sell executed");
+  const notional = Number(sellRow.usdMicro);
+  const pnlMagnitude = Math.abs(Number(sellRow.pnlMicro));
+  assert.ok(pnlMagnitude < notional * 0.01, `pnl (${sellRow.pnlMicro}) should be << notional (${notional}), not ~full notional`);
+});
+
 // --- DB: equity curve + metrics ---
 test("equity curve records and analytics Sharpe/maxDD/winRate are computed", () => {
   const db = freshDb();

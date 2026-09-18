@@ -111,8 +111,10 @@ function paperFillOne(o, prices, wallet) {
     const fee = (notional * FEEB) / USDT;
     const prev = wallet.pos[o.key] || { qty: 0n, avgCost: null };
     const newQty = prev.qty + qty;
-    let newAvg = cost / qty;
-    if (prev.avgCost != null && prev.qty > 0n) newAvg = (prev.qty * prev.avgCost + cost) / newQty;
+    // avgCost is micro-USD per 1 base unit (matches px_micro so (lvl - avg) is dimensionally right)
+    let newAvg;
+    if (prev.avgCost != null && prev.qty > 0n) newAvg = (prev.qty * prev.avgCost + cost * QTY_SCALE) / newQty;
+    else newAvg = (cost * QTY_SCALE) / qty;
     wallet.pos[o.key] = { qty: newQty, avgCost: newAvg };
     wallet.cash -= cost;
     return { action: o.action === "HEDGE" ? "HEDGE" : "BUY", key: o.key, qtyMicro: qty, usdMicro: notional, pxMicro: lvl, pnlMicro: 0n, feeMicro: fee };
@@ -328,9 +330,12 @@ async function executePaper(db, { orders, prices }) {
 function applyBuy(pos, key, qty, costUsdMicro) {
   const prev = pos[key] || { qty: 0n, avgCost: null };
   const newQty = prev.qty + qty;
-  let newAvg = costUsdMicro / qty;
+  // avgCost is micro-USD per 1 base unit (matches px_micro so (lvl - avg) is dimensionally right)
+  let newAvg;
   if (prev.avgCost != null && prev.qty > 0n) {
-    newAvg = (prev.qty * prev.avgCost + costUsdMicro) / newQty;
+    newAvg = (prev.qty * prev.avgCost + costUsdMicro * QTY_SCALE) / newQty;
+  } else {
+    newAvg = (costUsdMicro * QTY_SCALE) / qty;
   }
   pos[key] = { qty: newQty, avgCost: newAvg };
 }
