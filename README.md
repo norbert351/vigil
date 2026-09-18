@@ -52,7 +52,7 @@ Every cycle (~5 min) the agent:
 ```bash
 npm install
 npm start            # http://localhost:8080 (paper ledger, stub LLM)
-npm test             # 34 tests: engine / risk / executor / db / llm
+npm test             # 35 tests: engine / risk / executor / db / llm
 ```
 
 ## Documentation
@@ -131,7 +131,7 @@ npm start
 | `VIGIL_SLIPPAGE_BPS` | 2 | slippage (bps) |
 | `VIGIL_REGIME_FEAR` | 35 | Fear & Greed below → defensive tilt |
 
-Tests: `node --test` (34 specs — valuation, signed manifests, night-mode breaker, kill-switch,
+Tests: `node --test` (35 specs — valuation, signed manifests, night-mode breaker, kill-switch,
 Fear-regime rotation, cash-funded buys (no overdraft), fee/slippage, sell-proceeds rotation,
 equity-curve analytics, decision log, stub policy).
 
@@ -250,7 +250,7 @@ market.js (Bitget rToken+crypto)      perception.js (Bitget MCP + RSS + F&G)
   live market price (fees + slippage applied). This is what the Agentic Trading track explicitly
   permits (`simulated or paper trading acceptable`). Real-venue execution is a Bitget
   Demo/Agentic API key away — the seam (`EXECUTION_MODE=bitget`) is already present.
-- **Tested**: 34/34 specs (cash funding, no-overdraft, fee/slippage, sell-proceeds rotation,
+- **Tested**: 35/35 specs (cash funding, no-overdraft, fee/slippage, sell-proceeds rotation,
   night breaker, Fear rotation, kill-switch, equity analytics, decision log).
 
 *Not financial advice. Novel-aggressive strategy; no capital at risk in paper mode.*

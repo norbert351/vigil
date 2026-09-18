@@ -65,8 +65,9 @@ computed against a *cost basis that the venue re-sync approximates at the curren
 toward 1.0 and inflates realized P&L on the venue-demo book. **The NAV-based measures are the
 defensible ones** — Sharpe and max drawdown come from the signed `equity_curve` (NAV = cash +
 positions at live prices) and are unaffected by the basis approximation. Realized P&L on the
-committed paper book is exact (cash-correct, fees + slippage); the venue-demo win-rate is
-labelled optimistic until real cost-basis replay is wired.
+committed paper book is exact (cash-correct, fees + slippage). **The per-unit cost-basis scale
+bug was fixed in code (commit `373ba84`, 35/35 tests green)** so *new* fills compute correct
+realized P&L; the win-rate label above remains for the historical pre-fix venue sells.
 **In addition, a real 90-day historical backtest** (`GET /api/backtest`, actual Bitget daily
 klines + historical Fear & Greed, fees + slippage applied) validates the strategy's
 Sharpe/max-DD/regime behavior as supporting evidence.
@@ -81,7 +82,7 @@ a **LIVE LLM decision-maker** (OpenAI-compatible seam; the sponsor's **Bitget Qw
 `qwen3.8-max`** is wired and running via `VIGIL_LLM=qwen`, same seam and loop), hard risk layer
 (night-mode + Fear-regime rotation), cash-correct paper executor (fees + slippage),
 signed-manifest ledger with bound context, equity-curve + Sharpe/max-DD/win-rate
-analytics, HTTP/SSE dashboard, **34/34 tests green**, public repo, fresh clone verified
+analytics, HTTP/SSE dashboard, **35/35 tests green**, public repo, fresh clone verified
 to boot, **and real venue execution live on Bitget's paper-trading environment** — VIGIL
 places signed UTA v3 spot market orders (verified fills: BTC/ETH, `status: filled`) and
 re-syncs its ledger to venue truth after every sweep. The venue route is capability-aware:

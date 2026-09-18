@@ -23,7 +23,7 @@ No third-party runtime dependencies. Tests use Node's built-in test runner.
 ```bash
 npm install   # no deps — no-op; included for convention
 npm start     # http://localhost:8080 (paper ledger + deterministic stub LLM)
-npm test      # 34 tests: engine / risk / executor / db / llm / audit / US MCP / dryRun
+npm test      # 35 tests: engine / risk / executor / db / llm / audit / US MCP / dryRun
 ```
 
 To run the real decision-maker (Qwen) + demo venue, set env — see `README.md` → "Execution
@@ -92,7 +92,7 @@ One cycle ≈ every 5 min (`VIGIL_SCAN_MS`). Steps:
 **Multi-session (Connect):** `GET/POST /api/sessions` · `GET /api/sessions/:id/{state,decisions,
 metrics,alerts,timeline,log.csv}` · `POST /api/sessions/:id/{run,kill}` (owner-key header)
 
-## Test suite (34 tests)
+## Test suite (35 tests)
 
 Engine valuation & signed manifests · risk caps & night-mode breaker · Fear-regime rotation ·
 cash-funded buys (no overdraft) · fee/slippage settlement · sell-proceeds rotation · two-model

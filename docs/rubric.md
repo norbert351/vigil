@@ -57,7 +57,7 @@ file, endpoint, or command** that settles it. A judge can verify any row in minu
 ```bash
 # core claims in minutes
 git clone https://github.com/norbert351/vigil && cd vigil
-npm test                                   # 34/34 green
+npm test                                   # 35/35 green
 npm start &                               # local agent
 curl localhost:8080/health                # llm=qwen, deadline 2026-09-27
 curl localhost:8080/api/metrics            # live Sharpe/maxDD/win-rate/realized P&L
