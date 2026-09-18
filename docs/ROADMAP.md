@@ -15,6 +15,7 @@
 - **Signed decision log** — every cycle bound to {window, nonce, ts, nav, prices, orders} → `VIGIL-<sha256>`, replayable + committed CSV
 
 ### Surfaces
+- **Demo video** — 44s live take (landing → command center → night timeline → leaderboard), servable at `/vigil-demo.mp4`; repo copy `docs/demo/vigil-demo.mp4`, re-recordable via `demo/driver.cjs`
 - **Landing** (`/`) — navy/light-blue identity, Pexels night-city hero with text on image, live ticker, animated sections
 - **Command center** (`/app`) — KPIs, allocation, holdings, signed log with **audit verdicts**, SSE stream, kill-switch
 - **Connect** (`/connect`) — BYO demo-key onboarding: read-only validation, demo-only gate, encrypted at rest

@@ -92,6 +92,7 @@ endpoint (Bitget Qwen `qwen3.8-max`).
 ### Part 5 · Deliverables (in Submission Materials Link)
 - Public **GitHub repo** (code, tests, render.yaml, README)
 - **Live demo / dashboard** URL (deployed) + SSE agent stream
+- **Demo video**: https://vigil-mg0m.onrender.com/vigil-demo.mp4 (44s live take; repo `docs/demo/vigil-demo.mp4`) — landing → command center (KPIs/holdings/signed log w/ audit verdicts) → night timeline → leaderboard
 - **Paper-trading log**: `docs/paper-log/vigil-decision-log.csv` (committed, dated)
 - README with architecture + honest status
 
