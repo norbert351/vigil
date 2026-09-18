@@ -1,7 +1,7 @@
 // VIGIL — performance analytics from the equity curve + trade log.
 // Supplies the Agentic Trading quant half: Sharpe, max drawdown, win rate, realized P&L.
 // Pure functions over DB rows so they are unit-testable.
-import { equityCurve, tradeRows, getAgentState } from "./db.js";
+import { DB_MODE, equityCurve, tradeRows, getAgentState } from "./db.js";
 
 // Annualized Sharpe from the NAV time series (5-min observations treated as daily-equiv
 // sampling is not right; we annualize by sqrt(365*288)-ish for intraday, but report a
@@ -51,23 +51,42 @@ export function winRateAndPnl(rows = []) {
 // Aggregate metrics endpoint payload. Sharpe is computed on DAILY-resampled NAV (last
 // observation per UTC day) so it is a sane, defensible annualized figure rather than an
 // artifact of intraday sampling frequency. Needs >= 3 daily points to report.
-export function computeMetrics(db) {
-  const curve = equityCurve(db);
-  const trades = tradeRows(db).filter((r) => r.action === "SELL"); // realized closes
-  const wr = winRateAndPnl(trades);
-  const daily = dailyNav(curve);
-  return {
-    observations: curve.length,
-    dailyObservations: daily.length,
-    sharpe: sharpeFromCurve(daily, 365),      // daily returns → annualize by sqrt(365)
-    maxDrawdown: maxDrawdown(curve),
-    dailyMaxDrawdown: maxDrawdown(daily),
-    trades: wr.trades,
-    winRate: wr.winRate,
-    realizedPnlUsd: wr.realizedUsd,
-    agent: getAgentState(db),
-  };
-}
+// Mode-switched: sync in sqlite (test/local), async in pg (Neon).
+export const computeMetrics = DB_MODE === "pg"
+  ? async (db) => {
+      const curve = await equityCurve(db);
+      const trades = (await tradeRows(db)).filter((r) => r.action === "SELL"); // realized closes
+      const wr = winRateAndPnl(trades);
+      const daily = dailyNav(curve);
+      return {
+        observations: curve.length,
+        dailyObservations: daily.length,
+        sharpe: sharpeFromCurve(daily, 365),      // daily returns → annualize by sqrt(365)
+        maxDrawdown: maxDrawdown(curve),
+        dailyMaxDrawdown: maxDrawdown(daily),
+        trades: wr.trades,
+        winRate: wr.winRate,
+        realizedPnlUsd: wr.realizedUsd,
+        agent: await getAgentState(db),
+      };
+    }
+  : (db) => {
+      const curve = equityCurve(db);
+      const trades = tradeRows(db).filter((r) => r.action === "SELL"); // realized closes
+      const wr = winRateAndPnl(trades);
+      const daily = dailyNav(curve);
+      return {
+        observations: curve.length,
+        dailyObservations: daily.length,
+        sharpe: sharpeFromCurve(daily, 365),      // daily returns → annualize by sqrt(365)
+        maxDrawdown: maxDrawdown(curve),
+        dailyMaxDrawdown: maxDrawdown(daily),
+        trades: wr.trades,
+        winRate: wr.winRate,
+        realizedPnlUsd: wr.realizedUsd,
+        agent: getAgentState(db),
+      };
+    };
 
 // Collapse an intraday equity curve to daily NAV (last obs per UTC day).
 export function dailyNav(curve) {

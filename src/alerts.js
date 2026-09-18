@@ -48,7 +48,7 @@ export async function fireAlert(db, alert, { webhook } = {}) {
     meta: alert.meta ? JSON.stringify(alert.meta) : null,
   };
   try {
-    const prev = recentAlert(db, a.type);
+    const prev = await recentAlert(db, a.type);
     if (prev && a.ts - Number(prev.ts) < DEDUPE_MS) return { fired: false, reason: "deduped" };
   } catch { /* table may be absent on very old db — logged below anyway */ }
 
@@ -60,7 +60,7 @@ export async function fireAlert(db, alert, { webhook } = {}) {
       delivered = r.ok; detail = `webhook ${r.status}`;
     } catch (e) { detail = `webhook error: ${e.message}`; }
   }
-  try { logAlert(db, { ...a, delivered: delivered ? 1 : 0 }); } catch { /* non-fatal */ }
+  try { await logAlert(db, { ...a, delivered: delivered ? 1 : 0 }); } catch { /* non-fatal */ }
   console.log(`[alert] ${a.severity} ${a.type}: ${a.title} (${detail})`);
   return { fired: true, delivered, detail };
 }
@@ -110,6 +110,6 @@ export async function evaluateSweepAlerts(db, { result, state, prevNav, webhook 
   return fired.filter((f) => f && f.fired);
 }
 
-export function listAlerts(db, limit = 50) {
-  try { return alertRows(db, limit); } catch { return []; }
+export async function listAlerts(db, limit = 50) {
+  try { return await alertRows(db, limit); } catch { return []; }
 }

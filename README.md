@@ -124,6 +124,7 @@ npm start
 | `VIGIL_LLM_API_KEY` | — | live-mode key |
 | `VIGIL_QWEN_API_KEY` | — | Qwen key (sponsor endpoint, `VIGIL_LLM=qwen`) |
 | `VIGIL_SCAN_MS` | 300000 | decision cadence |
+| `VIGIL_DATABASE_URL` | — | when set, ledgers persist on Neon (`vigil` / `vigil_session_*` schemas) instead of ephemeral sqlite — keeps the deployed demo's full history across redeploys |
 | `VIGIL_MAX_DD` | 0.10 | circuit-breaker drawdown (day) |
 | `VIGIL_NIGHT_DD` | 0.05 | circuit-breaker drawdown (night mode) |
 | `VIGIL_FEE_BPS` | 10 | taker fee (bps) |
@@ -221,7 +222,7 @@ market.js (Bitget rToken+crypto)      perception.js (Bitget MCP + RSS + F&G)
         agent.js  — sense → LLM (llm.js) → risk.js gate → executor.js → sign (engine.js)
          |            (night-mode + Fear-regime rotation; cash + fee/slippage settlement)
          |
-        db.js (node:sqlite: positions+cost basis · cash · realized P&L · decisions+context · equity_curve)
+        db.js (dual-mode ledger: positions+cost basis · cash · realized P&L · decisions+context · equity_curve)
          \____________________ analytics.js → index.js (HTTP + SSE dashboard + /api/metrics) ____/
 ```
 

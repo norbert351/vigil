@@ -38,12 +38,12 @@ export async function syncLedgerFromVenue(db, prices, venue) {
     }
   }
   // clear stale paper positions — venue holdings are the source of truth
-  for (const r of db.prepare("SELECT key FROM positions").all()) {
-    if (!map[r.key]) setPosition(db, r.key, 0n, null);
+  for (const key of Object.keys(await getPositions(db))) {
+    if (!map[key]) await setPosition(db, key, 0n, null);
   }
-  for (const [k, v] of Object.entries(map)) if (v.qty > 0n) setPosition(db, k, v.qty, v.avgCost);
+  for (const [k, v] of Object.entries(map)) if (v.qty > 0n) await setPosition(db, k, v.qty, v.avgCost);
   const usdt = await v.usdtAvailable();
-  setCash(db, BigInt(Math.round(usdt * 1e6)));
+  await setCash(db, BigInt(Math.round(usdt * 1e6)));
   return map;
 }
 
@@ -128,7 +128,7 @@ async function executeOnVenue(db, { orders, prices, venue }) {
     throw new Error("venue execution requested but venue creds missing for this client");
   }
   // wallet = local ledger view; venue-supported fills are overwritten from venue truth after the batch
-  const wallet = { pos: getPositions(db), cash: getCash(db) };
+  const wallet = { pos: await getPositions(db), cash: await getCash(db) };
   const paperKeys = new Set();
   const startCash = wallet.cash;
   let venueFilled = 0, paperFilled = 0;
@@ -220,7 +220,7 @@ async function executeOnVenue(db, { orders, prices, venue }) {
   // Persist paper-fallback legs (venue-unsupported symbols) into the ledger.
   for (const key of paperKeys) {
     const p = wallet.pos[key];
-    if (p) setPosition(db, key, p.qty, p.avgCost);
+    if (p) await setPosition(db, key, p.qty, p.avgCost);
   }
   const venueErrors = executed.filter((e) => e.error).length;
   // Re-sync venue-traded holdings + cash to venue truth, then apply the paper-leg cash delta.
@@ -233,12 +233,12 @@ async function executeOnVenue(db, { orders, prices, venue }) {
       const baseCoin = sym.replace(/USDT$/, "");
       const held = Number(bal[baseCoin]?.available || 0);
       const px = Number(prices[key]?.lastMicro || 0) / 1e6;
-      if (held > 0 && px > 0) setPosition(db, key, BigInt(Math.round(held * 1e6)), BigInt(Math.round(px * 1e6)));
-      else if (!paperKeys.has(key)) setPosition(db, key, 0n, null);
+      if (held > 0 && px > 0) await setPosition(db, key, BigInt(Math.round(held * 1e6)), BigInt(Math.round(px * 1e6)));
+      else if (!paperKeys.has(key)) await setPosition(db, key, 0n, null);
     }
     const usdt = await usdtAvailable();
     const paperDelta = wallet.cash - startCash; // cash effect of simulated legs
-    setCash(db, BigInt(Math.round(usdt * 1e6)) + paperDelta);
+    await setCash(db, BigInt(Math.round(usdt * 1e6)) + paperDelta);
   } catch (e) { /* ledger sync non-fatal */ }
   return { executed, venueFilled, paperFilled, venueErrors };
 }
@@ -252,18 +252,18 @@ export async function executeOrders(db, { orders, trigger, rationale, window, mo
     executed = r.executed;
     globalThis.__vigilVenueStats = { venueFilled: r.venueFilled, paperFilled: r.paperFilled, venueErrors: r.venueErrors || 0 };
   } else {
-    executed = executePaper(db, { orders, prices });
+    executed = await executePaper(db, { orders, prices });
   }
 
-  const nonce = decisionId(db);
+  const nonce = await decisionId(db);
   const manifest = signManifest({ window, nonce, ts: Date.now(), navMicro, trigger, prices, orders: executed, model, llm, context });
   return { executed, manifest, nonce, mode };
 }
 
 // ---- paper route (default) ----
-function executePaper(db, { orders, prices }) {
-  const pos = getPositions(db); // { key: { qty, avgCost } }
-  let cash = getCash(db);
+async function executePaper(db, { orders, prices }) {
+  const pos = await getPositions(db); // { key: { qty, avgCost } }
+  let cash = await getCash(db);
 
   const pxOf = (k) => BigInt(prices[k]?.lastMicro || 0);
   // effective fill = last price shifted by slippage (pay more on buy, get less on sell)
@@ -297,7 +297,7 @@ function executePaper(db, { orders, prices }) {
       const pnl = avg != null ? ((lvl - avg) * qty) / QTY_SCALE : 0n;
       pos[o.key] = { ...pos[o.key], qty: held - qty, avgCost: held - qty === 0n ? null : pos[o.key].avgCost };
       cash += proceeds;
-      if (pnl !== 0n) addRealized(db, pnl);
+      if (pnl !== 0n) await addRealized(db, pnl);
       executed.push({ action: o.action, key: o.key, qtyMicro: qty, usdMicro: notional, pxMicro: lvl, pnlMicro: pnl, feeMicro: fee, detail: o.reason || "manual" });
     } else if (o.action === "BUY" || o.action === "HEDGE") {
       const lvl = level(o.key, true);
@@ -319,8 +319,8 @@ function executePaper(db, { orders, prices }) {
   }
 
   // write back positions (with cost basis) + cash
-  for (const [key, p] of Object.entries(pos)) setPosition(db, key, p.qty, p.avgCost);
-  setCash(db, cash);
+  for (const [key, p] of Object.entries(pos)) await setPosition(db, key, p.qty, p.avgCost);
+  await setCash(db, cash);
 
   return executed;
 }

@@ -4,7 +4,7 @@ import http from "node:http";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { openDB, flatPositions, getAgentState, listDecisions, decisionLogCsv, saveSnapshot, getCash, equityCurve, setKill, countDecisions } from "./db.js";
+import { openDB, flatPositions, getAgentState, listDecisions, decisionLogCsv, saveSnapshot, getCash, equityCurve, setKill, countDecisions, ensureSchema, DB_MODE } from "./db.js";
 import { computeMetrics } from "./analytics.js";
 import { refreshPrices } from "./market.js";
 import { portfolioState } from "./engine.js";
@@ -61,12 +61,12 @@ function usd(micro) { const n = Number(BigInt(micro)); return n / 1e6; }
 
 async function viewModelFor(database, opts = {}) {
   const prices = await refreshPrices();
-  const st = portfolioState(flatPositions(database), prices);
-  const cash = getCash(database);
+  const st = portfolioState(await flatPositions(database), prices);
+  const cash = await getCash(database);
   const nav = usd(st.total) + usd(cash);
   const seed = usd(SEED_USD_MICRO);
   const drawdown = seed > 0 ? Math.max(0, (seed - nav) / seed) : 0;
-  const ag = getAgentState(database);
+  const ag = await getAgentState(database);
   const w = currentWindow();
   const regime = crossAssetRegime(prices, latestPerception()?.fearGreed?.value ?? null);
   const holdings = Object.entries(st.detail).map(([k, d]) => ({
@@ -81,7 +81,7 @@ async function viewModelFor(database, opts = {}) {
     agent: { status: ag.status, nonce: ag.nonce, lastRun: ag.last_run_ts, breakerTripped: ag.breaker_tripped, killed: ag.kill_switched === 1, realizedPnlUsd: usd(ag.realized_pnl_micro || 0) },
     holdings,
     targets: Object.fromEntries(Object.entries(DEFAULT_TARGETS).map(([k, v]) => [k, usd(BigInt(v))])),
-    decisions: listDecisions(database, 30),
+    decisions: await listDecisions(database, 30),
   };
 }
 
@@ -105,7 +105,7 @@ async function route(req, res) {
   }
 
   if (m === "GET" && p === "/api/metrics") {
-    return json(res, 200, computeMetrics(db));
+    return json(res, 200, await computeMetrics(db));
   }
 
   if (m === "GET" && p === "/api/backtest") {
@@ -145,7 +145,7 @@ async function route(req, res) {
   }
 
   if (m === "GET" && p === "/api/equity") {
-    const curve = equityCurve(db, 5000).map((r) => ({ ts: r.ts, nav: Number(r.nav_micro) / 1e6, cash: Number(r.cash_micro) / 1e6 }));
+    const curve = (await equityCurve(db, 5000)).map((r) => ({ ts: r.ts, nav: Number(r.nav_micro) / 1e6, cash: Number(r.cash_micro) / 1e6 }));
     return json(res, 200, { observations: curve.length, curve });
   }
 
@@ -164,14 +164,14 @@ async function route(req, res) {
     let body = {};
     try { body = await readBody(req); } catch { return json(res, 400, { error: "invalid json" }); }
     const on = Boolean(body.on);
-    setKill(db, on);
+    await setKill(db, on);
     return json(res, 200, { killed: on, message: on ? "trading halted (kill-switch on)" : "trading resumed" });
   }
 
-  if (m === "GET" && p === "/api/decisions") return json(res, 200, { decisions: listDecisions(db, 200) });
+  if (m === "GET" && p === "/api/decisions") return json(res, 200, { decisions: await listDecisions(db, 200) });
 
   if (m === "GET" && p === "/api/decision-log.csv") {
-      const rows = decisionLogCsv(db, 0);
+      const rows = await decisionLogCsv(db, 0);
       const hdr = "seq,ts,window,trigger,llm,nav_micro,rationale,orders,review_verdict,review_rationale";
       const lines = [hdr];
       for (const r of rows) {
@@ -211,15 +211,15 @@ async function route(req, res) {
 
   if (m === "GET" && p === "/api/leaderboard") {
     const prices = await refreshPrices();
-    return json(res, 200, { books: buildLeaderboard(db, { prices }) });
+    return json(res, 200, { books: await buildLeaderboard(db, { prices }) });
   }
 
-  if (m === "GET" && p === "/api/alerts") return json(res, 200, { alerts: listAlerts(db, 50) });
+  if (m === "GET" && p === "/api/alerts") return json(res, 200, { alerts: await listAlerts(db, 50) });
 
   // event-aligned night timeline (flagship)
   if (m === "GET" && p === "/api/night-timeline") {
     const hours = Math.min(Math.max(Number(url.searchParams.get("hours") || 24), 1), 168);
-    return json(res, 200, buildTimeline(db, { hours }));
+    return json(res, 200, await buildTimeline(db, { hours }));
   }
 
   if (m === "POST" && p === "/api/sessions") {
@@ -243,15 +243,15 @@ async function route(req, res) {
     if (!session) return json(res, 404, { error: "session not found" });
     const sdb = sessionDb(session.id);
     if (sm[2] === "state") return json(res, 200, await viewModelFor(sdb, { executionMode: "bitget", llm: LLM_MODE, session: { id: session.id, name: session.name, createdAt: session.createdAt } }));
-    if (sm[2] === "decisions") return json(res, 200, { decisions: listDecisions(sdb, 200) });
-    if (sm[2] === "metrics") return json(res, 200, computeMetrics(sdb));
-    if (sm[2] === "alerts") return json(res, 200, { alerts: sessionAlerts(session.id, 50), webhook: !!session.hasWebhook });
+    if (sm[2] === "decisions") return json(res, 200, { decisions: await listDecisions(sdb, 200) });
+    if (sm[2] === "metrics") return json(res, 200, await computeMetrics(sdb));
+    if (sm[2] === "alerts") return json(res, 200, { alerts: await sessionAlerts(session.id, 50), webhook: !!session.hasWebhook });
     if (sm[2] === "timeline") {
       const hours = Math.min(Math.max(Number(url.searchParams.get("hours") || 24), 1), 168);
-      return json(res, 200, buildTimeline(sdb, { hours }));
+      return json(res, 200, await buildTimeline(sdb, { hours }));
     }
     if (sm[2] === "log.csv") {
-          const rows = decisionLogCsv(sdb, 0);
+          const rows = await decisionLogCsv(sdb, 0);
           const hdr = "seq,ts,window,trigger,llm,nav_micro,rationale,orders,review_verdict,review_rationale";
           const lines = [hdr];
           for (const r of rows) {
@@ -281,7 +281,7 @@ async function route(req, res) {
     if (osm[2] === "kill") {
       let b = {};
       try { b = await readBody(req); } catch { /* default on */ }
-      setKill(sdb, Boolean(b.on));
+      await setKill(sdb, Boolean(b.on));
       return json(res, 200, { killed: Boolean(b.on) });
     }
   }
@@ -313,10 +313,14 @@ const server = http.createServer((req, res) => route(req, res).catch((e) => {
   if (!res.headersSent) json(res, 500, { error: String(e.message || e) });
 }));
 
-server.listen(PORT, () => {
-  console.log(`VIGIL listening on :${PORT} (exec=${EXECUTION_MODE}, llm=${LLM_MODE})`);
+server.listen(PORT, async () => {
+  console.log(`VIGIL listening on :${PORT} (exec=${EXECUTION_MODE}, llm=${LLM_MODE}, db=${DB_MODE})`);
   startPerceptionLoop();      // background overnight context (MCP + fallbacks)
   restartLoops().catch((e) => console.error("session restart", e.message)); // resume user sessions
+  if (DB_MODE === "pg") {
+    // ensure the Neon schema exists before the first sweep writes to it
+    try { await ensureSchema(db); } catch (e) { console.error("[neon] schema init", e.message); }
+  }
   // warm a first sweep so the dashboard has data
   runSweep(db).then((r) => console.log("warm sweep:", JSON.stringify(r).slice(0, 200))).catch((e) => console.error("warm", e.message));
 });

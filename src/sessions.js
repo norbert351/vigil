@@ -12,7 +12,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { openDB, setKill } from "./db.js";
+import { openDB, setKill, ensureSchema, DB_MODE } from "./db.js";
 import { runSweep } from "./agent.js";
 import { createVenueClient, probeDemoKey, venueSymbol } from "./venue.js";
 import { getPositions, getCash } from "./db.js";
@@ -102,9 +102,11 @@ export function sessionVenue(id) {
   return createVenueClient(decryptCreds(s.creds));
 }
 
+function sessionSchema(id) { return `vigil_session_${id}`; }
+
 export function sessionDb(id) {
-  const db = openDB(path.join(SESSIONS_DIR, `${id}.sqlite`));
-  return db;
+  if (DB_MODE === "pg") return sessionSchema(id); // schema tag; tables ensured at creation
+  return openDB(path.join(SESSIONS_DIR, `${id}.sqlite`));
 }
 
 function rateAllowed(ip) {
@@ -184,6 +186,7 @@ export async function createSession({ apiKey, secret, passphrase, name, ip, webh
 
   // boot the isolated ledger + loop
   const db = sessionDb(id);
+  if (DB_MODE === "pg") { try { await ensureSchema(db); } catch (e) { console.error(`[session ${id}] schema`, e.message); } }
   const client = createVenueClient({ apiKey, secret, passphrase });
   loops.set(id, { timer: sweepLoop(id, db, client, "bitget"), db });
   // immediate warm sweep so the dashboard has data + the venue truth is synced
@@ -195,8 +198,8 @@ export async function createSession({ apiKey, secret, passphrase, name, ip, webh
 }
 
 // Alerts recorded for a session (break-glass history).
-export function sessionAlerts(id, limit = 50) {
-  try { return getAlerts(sessionDb(id), limit); } catch { return []; }
+export async function sessionAlerts(id, limit = 50) {
+  try { return await getAlerts(sessionDb(id), limit); } catch { return []; }
 }
 
 // Legacy sessions (server restart): restart loops for active sessions.
@@ -207,6 +210,7 @@ export async function restartLoops() {
       const creds = decryptCreds(s.creds);
       const client = createVenueClient(creds);
       const db = sessionDb(s.id);
+      if (DB_MODE === "pg") { try { await ensureSchema(db); } catch (e) { console.error(`[session ${s.id}] schema`, e.message); } }
       loops.set(s.id, { timer: sweepLoop(s.id, db, client, "bitget"), db });
       n++;
     } catch (e) { console.error(`[session ${s.id}] restart failed:`, e.message); }
@@ -220,10 +224,10 @@ export function authorize(session, ownerKey) {
   return hashOwner(ownerKey || "") === session.ownerHash;
 }
 
-export function sessionState(session) {
+export async function sessionState(session) {
   const db = loops.get(session.id)?.db || sessionDb(session.id);
-  const pos = getPositions(db);
-  const cash = getCash(db);
+  const pos = await getPositions(db);
+  const cash = await getCash(db);
   return { id: session.id, name: session.name, createdAt: session.createdAt, status: session.status, usdt: session.usdt, cash };
 }
 

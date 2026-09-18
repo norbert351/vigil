@@ -8,6 +8,12 @@ kill.switch
 *.log
 data/
 
+# one-off db migration / verification tools (may carry a live Neon URL — env-driven)
+scripts/*-neon*.mjs
+scripts/migrate-*.mjs
+scripts/pg-selftest.mjs
+scripts/reset-sequences.mjs
+
 # env
 .env
 .env.*

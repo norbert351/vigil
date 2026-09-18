@@ -3,6 +3,7 @@
 // signed VIGIL-<sha256> — deterministic, tamper-evident, replay-resistant. This is the
 // "decision explainability" axis the Agentic Trading track judges.
 import { createHash } from "node:crypto";
+import { getAgentState } from "./db.js";
 import { MICRO, QTY_SCALE, UNIVERSE } from "./config.js";
 
 export function assetName(key) {
@@ -42,8 +43,7 @@ export function signManifest({ window, nonce, ts, navMicro, trigger, prices, ord
   return { hash: digest, sentinel: `VIGIL-${digest.slice(0, 12)}`, ser };
 }
 
-export function decisionId(db) {
-  const st = db.prepare("SELECT nonce FROM agent_state WHERE id=1").get();
-  const nonce = (st?.nonce ?? 0) + 1;
-  return nonce;
+export async function decisionId(db) {
+  const st = await getAgentState(db);
+  return (Number(st?.nonce ?? 0)) + 1;
 }

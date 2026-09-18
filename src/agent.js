@@ -10,7 +10,7 @@ import { executeOrders, syncLedgerFromVenue } from "./executor.js";
 import { latestPerception } from "./perception.js";
 import { llmFactory } from "./llm.js";
 import {
-  flatPositions, setPosition, getCash, setCash, addRealized,
+  flatPositions, setPosition, clearPositions, getCash, setCash, addRealized,
   setAgentState, saveSnapshot, logDecision, getAgentState, logEquity, isKilled, equityCurve,
 } from "./db.js";
 import { DEFAULT_TARGETS, SEED_USD_MICRO as SEED, QTY_SCALE, FEE_BPS, SLIPPAGE_BPS, EXECUTION_MODE } from "./config.js";
@@ -30,9 +30,9 @@ export function currentWindow() {
 // First-run: allocate SEED across default targets at live prices, WITH fees, funding
 // each buy from cash; residual stays as USDT cash. Sets the peak = SEED so drawdown starts at 0.
 export async function maybeSeed(db, targets, prices) {
-  const r = db.prepare("SELECT COUNT(*) c FROM positions WHERE qty_micro > 0").get();
-  if (Number(r.c) > 0) return false;
-  db.prepare("DELETE FROM positions").run();
+  const held = await flatPositions(db);
+  if (Object.values(held).some((q) => q > 0n)) return false;
+  await clearPositions(db);
   let cash = SEED;
   for (const [key, w] of Object.entries(targets)) {
     const px = prices[key]?.lastMicro;
@@ -47,23 +47,23 @@ export async function maybeSeed(db, targets, prices) {
     const notional = (qty * lvl) / QTY_SCALE;
     const cost = buyCost(notional);
     if (cost > cash) continue;
-    setPosition(db, key, qty, cost / qty);
+    await setPosition(db, key, qty, cost / qty);
     cash -= cost;
   }
-  setCash(db, cash);
-  const posVal = portfolioState(flatPositions(db), prices).total;
-  setAgentState(db, { nav_micro: SEED, equity_micro: posVal + cash, cash_micro: cash, realized_pnl_micro: 0n, status: "seeded", last_run_ts: Date.now(), drawdown: 0, breaker_tripped: 0, kill_switched: 0 });
+  await setCash(db, cash);
+  const posVal = portfolioState(await flatPositions(db), prices).total;
+  await setAgentState(db, { nav_micro: SEED, equity_micro: posVal + cash, cash_micro: cash, realized_pnl_micro: 0n, status: "seeded", last_run_ts: Date.now(), drawdown: 0, breaker_tripped: 0, kill_switched: 0 });
   return true;
 }
 
 // Full live state handed to the LLM + risk layer. NAV = cash + positions.
 export async function buildState(db) {
   const prices = await refreshPrices(true);
-  const pos = flatPositions(db);
+  const pos = await flatPositions(db);
   const st = portfolioState(pos, prices);
-  const cash = getCash(db);
+  const cash = await getCash(db);
   const nav = st.total + cash;
-  const state0 = getAgentState(db);
+  const state0 = await getAgentState(db);
   const prevPeak = Number(state0.nav_micro || 0);
   const cur = Number(nav);
   const peak = Math.max(prevPeak, cur, Number(SEED));
@@ -75,7 +75,7 @@ export async function buildState(db) {
   }
   return {
     nav: cur, peak, cash: Number(cash), equity: cur, drawdown, window, hour, positions, prices,
-    targets: DEFAULT_TARGETS, breaker: Number(state0.breaker_tripped) === 1, killed: isKilled(db),
+    targets: DEFAULT_TARGETS, breaker: Number(state0.breaker_tripped) === 1, killed: await isKilled(db),
   };
 }
 
@@ -99,10 +99,10 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, dr
   const mode = execMode || EXECUTION_MODE;
   const prices = await refreshPrices(true);
   trace("prices");
-  if (!dryRun) saveSnapshot(db, JSON.stringify(prices));
+  if (!dryRun) await saveSnapshot(db, JSON.stringify(prices));
   // NAV before this sweep — used by the break-glass alert layer
   let prevNav = 0;
-  try { const c = equityCurve(db, 5); if (c.length) prevNav = Number(c[c.length - 1].nav_micro); } catch { /* fresh */ }
+  try { const c = await equityCurve(db, 5); if (c.length) prevNav = Number(c[c.length - 1].nav_micro); } catch { /* fresh */ }
   const venueMode = mode === "bitget";
   // bitget mode: the venue IS the account — sync ledger from venue truth, no paper seed.
   // (In dryRun mode, skip syncs/seeding so the preview never mutates state.)
@@ -110,10 +110,10 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, dr
     try {
       await syncLedgerFromVenue(db, prices, venue);
       // a fresh venue account with zero positions starts the peak at current balance
-      const st0 = getAgentState(db);
-      const nav0 = portfolioState(flatPositions(db), prices).total + getCash(db);
+      const st0 = await getAgentState(db);
+      const nav0 = portfolioState(await flatPositions(db), prices).total + await getCash(db);
       if (Number(st0.nav_micro || 0) === 0 && nav0 > 0n) {
-        setAgentState(db, { nav_micro: Number(nav0), status: "seeded", last_run_ts: Date.now(), drawdown: 0 });
+        await setAgentState(db, { nav_micro: Number(nav0), status: "seeded", last_run_ts: Date.now(), drawdown: 0 });
       }
     } catch (e) { console.error("venue sync", e.message); }
   }
@@ -204,13 +204,13 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, dr
     const auditNote = review && review.verdict === "reject" && review.reason
       ? `Auditor rejected the plan: ${review.reason}${review.unavailable ? " (reviewer unavailable — fail-closed)" : ""}`
       : null;
-    logDecision(db, {
+    await logDecision(db, {
       ts: Date.now(), window: state.window, hash: "-", sentinel: "VIGIL-hold", trigger: holdTrigger, model: modelLabel, llm: llm.mode, navMicro,
       rationale: auditNote ? `${rationale} ${auditNote}` : rationale, context, orders: [], mode,
       reviewVerdict: review?.verdict || null, reviewRationale: review?.reason || (auditNote || null),
     });
-    setAgentState(db, { nav_micro: state.peak, cash_micro: state.cash, drawdown: state.drawdown, status: state.killed ? "killed" : "held", last_run_ts: Date.now() });
-    logEquity(db, Date.now(), navMicro, BigInt(Math.round(state.cash)));
+    await setAgentState(db, { nav_micro: state.peak, cash_micro: state.cash, drawdown: state.drawdown, status: state.killed ? "killed" : "held", last_run_ts: Date.now() });
+    await logEquity(db, Date.now(), navMicro, BigInt(Math.round(state.cash)));
     agentBus.emit("event", { type: "decision", window: state.window, trigger: holdTrigger, llm: llm.mode, navMicro: state.nav.toString() });
     // break-glass alerts (breaker / kill / outsized move)
     await evaluateSweepAlerts(db, { result: { breaker: risk.breaker, decision: holdTrigger }, state, prevNav, webhook }).catch(() => {});
@@ -218,12 +218,13 @@ export async function runSweep(db, { force = false, venue, execMode, webhook, dr
   }
 
   const res = await executeOrders(db, { orders, trigger, rationale, window: state.window, model: modelLabel, llm: llm.mode, prices, navMicro, context, venue, execMode: mode });
-  logDecision(db, {
+  await logDecision(db, {
     ts: Date.now(), window: state.window, hash: res.manifest.hash, sentinel: res.manifest.sentinel, trigger, model: modelLabel, llm: llm.mode, navMicro, rationale, context, orders: res.executed, mode: res.mode,
     reviewVerdict: review?.verdict || null, reviewRationale: review?.reason || null,
   });
-  setAgentState(db, { nav_micro: state.peak, cash_micro: getCash(db), drawdown: state.drawdown, status: risk.breaker ? "breaker" : "traded", last_run_ts: Date.now(), nonce: res.nonce, breaker_tripped: risk.breaker ? 1 : 0 });
-  logEquity(db, Date.now(), navMicro, getCash(db));
+  const cashAfter = await getCash(db);
+  await setAgentState(db, { nav_micro: state.peak, cash_micro: cashAfter, drawdown: state.drawdown, status: risk.breaker ? "breaker" : "traded", last_run_ts: Date.now(), nonce: res.nonce, breaker_tripped: risk.breaker ? 1 : 0 });
+  await logEquity(db, Date.now(), navMicro, cashAfter);
   agentBus.emit("event", { type: "decision", window: state.window, trigger, llm: llm.mode, navMicro: state.nav.toString(), hash: res.manifest.hash, orders: res.executed.length });
   // break-glass alerts (breaker / kill / outsized move / venue failures)
   const vstats = globalThis.__vigilVenueStats || {};

@@ -44,7 +44,7 @@ executing risk-capped orders — every decision signed into a tamper-evident log
       └───────────────────────────┬───────────────────────────────┘
                                   ▼
       ┌───────────────────────────────────────────────────────────┐
-      │  LEDGER (db.js node:sqlite)                                 │
+      │  LEDGER (db.js: dual-mode sqlite / Neon pg)               │
       │  positions · cash · realized P&L · signed decision log     │
       │  equity curve · alerts · per-session books                  │
       └───────────────────────────────────────────────────────────┘
@@ -95,7 +95,7 @@ real. Each sponsor surface is called in code, not just claimed in prose (see
 | `src/us_mcp.js` | Official `bitget-mcp-server` (US stocks/ETF quotes + history, read-only, no key). |
 | `src/perception.js` | Overnight context (news, macro, Fear & Greed) via bitget-signal MCP + fallbacks. |
 | `src/regime.js` | Cross-asset macro regime (risk-on/neutral/risk-off) from price action + Fear & Greed. |
-| `src/db.js` | node:sqlite ledger: positions, cash, realized P&L, signed decision log, equity curve. |
+| `src/db.js` / `db-pg.js` / `db-sqlite.js` | Dual-mode ledger: positions, cash, realized P&L, signed decision log, equity curve — sqlite by default, async Postgres on Neon (`vigil` schema) when `VIGIL_DATABASE_URL` set. |
 | `src/analytics.js` | Sharpe, max drawdown, win-rate, realized P&L. |
 | `src/backtest.js` | Historical backtest on real Bitget candles + US-MCP equity closes + Fear & Greed. |
 | `src/index.js` | HTTP + SSE dashboard, REST, paper-log CSV export, dryRun, US-MCP endpoints. |

@@ -3,12 +3,18 @@ services:
     name: vigil
     runtime: node
     plan: free
-    buildCommand: echo "no build step (zero dependencies)"
+    buildCommand: npm install
     startCommand: node src/index.js
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: "22"
+      # Persistent ledger on Neon. Set this to the postgresql://...neon.tech URL in the
+      # dashboard (sync:false = never committed). When set, the flag/session ledgers use
+      # the `vigil` / `vigil_session_*` schemas instead of ephemeral sqlite — so the
+      # deployed demo keeps its full paper-trading history across redeploys.
+      - key: VIGIL_DATABASE_URL
+        sync: false
       # Execution: real signed orders on Bitget's paper-trading venue (PAPTRADING:1,
       # virtual funds only). Capability-aware: rTokens are halted in demo -> labelled
       # paper-fallback legs; crypto is venue-filled.

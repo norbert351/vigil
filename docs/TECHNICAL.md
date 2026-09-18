@@ -1,7 +1,8 @@
 # VIGIL — Technical Documentation
 
-Zero-dependency Node 22 agent (node:http + node:sqlite). No framework, no build step — the
-entire backend is plain ESM.
+Node 22 agent on `node:http`, with a **dual-mode ledger**: `node:sqlite` by default, and
+async **Postgres on Neon** (`pg`) whenever `VIGIL_DATABASE_URL` is set — which is the
+deployed path. Beyond `pg`, no framework and no build step — the backend is plain ESM.
 
 ## Stack
 
@@ -9,7 +10,7 @@ entire backend is plain ESM.
 |---|---|---|
 | Runtime | Node.js (`node:http`, `node:sqlite`, `node:crypto`) | 22 (LTS) |
 | Language | Vanilla ESM JavaScript | — |
-| Data | SQLite via `node:sqlite` (WAL) | built-in |
+| Data | SQLite via `node:sqlite` (WAL) by default; **Neon Postgres via `pg`** (`vigil` / `vigil_session_*` schemas) when `VIGIL_DATABASE_URL` is set | built-in + `pg` (prod) |
 | Decision-maker | **Alibaba Qwen `qwen3.8-max`** (Bitget sponsor endpoint `hackathon.bitgetops.com/v1`) | OpenAI-compatible |
 | US data | `bitget-mcp-server` (`agent.bitget.com/mcp`) — read-only US stocks/ETF | v4.0.3 |
 | Crypto data | Bitget UTA v3 public tickers + `bitget-signal` MCP (`datahub.noxiaohao.com/mcp`) | — |
@@ -60,7 +61,7 @@ One cycle ≈ every 5 min (`VIGIL_SCAN_MS`). Steps:
 - SELLs are emitted before BUYs so rotation is cash-funded from proceeds.
 - Realized P&L and win-rate are computed from **actual** closed SELLs, not assumptions.
 
-## Data model (SQLite tables)
+## Data model (ledger tables — same schema on sqlite and Neon)
 
 | Table | Purpose |
 |---|---|
@@ -108,11 +109,14 @@ rules · `usTickerFor` mapping · `usQuote` + `usHistory` against bitget-mcp-ser
   news/macro/Fear&Greed (bitget-signal MCP + fallbacks) — all real, moving.
 - **Execution:** paper ledger at live prices (fees + slippage); a real Bitget demo-venue route
   (`VIGIL_EXEC=bitget`, `PAPTRADING:1`) is present and was verified to fill BTC/ETH.
-- **Committed evidence:** the paper-log (`docs/paper-log/vigil-decision-log.csv`) records every
-  signed decision with its audit verdict; refreshed by cron.
-- **Known honest limit:** Render's free tier has an ephemeral filesystem, so the *deployed*
-  instance's live ledger resets on redeploy. The **committed paper-log is the durable,
-  judge-verifiable evidence** — the live URL is the demo surface, the committed log is the
-  record.
+- **Ledger persistence (Neon):** on the deployed service `VIGIL_DATABASE_URL` points at a
+  Neon Postgres database. The flagship ledger lives in the `vigil` schema and every Connect
+  session in its own `vigil_session_<id>` schema — fully schema-qualified queries (Neon's
+  pooler does not persist `search_path`). The deployed ledger therefore **survives redeploys**
+  (no more free-tier reset): the full multi-hundred-decision history is served live at
+  `/api/*`. `src/db.js` dispatches to `src/db-pg.js` (async) or `src/db-sqlite.js` (sync);
+  tests + local runs default to sqlite.
+- **Committed evidence:** the paper-log (`docs/paper-log/vigil-decision-log.csv`) still records
+  every signed decision with its audit verdict; refreshed by cron.
 
 *Not financial advice. Novel-aggressive paper strategy; no capital at risk.*

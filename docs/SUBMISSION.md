@@ -83,7 +83,7 @@ labelled `paper-fallback` fill rather than pretending they were venue-executed.
 **The decision-maker is now Bitget Qwen `qwen3.8-max`** — the sponsor's own model, wired
 through the OpenAI-compatible seam and recorded in the signed log as `qwen3.8-max @
 bitget-qwen`.
-**Frameworks/APIs:** node:sqlite, node:http, Bitget UTA v3 (public market data + signed
+**Frameworks/APIs:** node:http, node:sqlite + Neon Postgres (`pg` for the persistent ledger), Bitget UTA v3 (public market data + signed
 spot trading in the demo environment via `PAPTRADING:1`), Bitget market-data MCP, **the
 official Agent Hub `bitget-mcp-server`** (`agent.bitget.com/mcp`, read-only US stock/ETF
 quotes + history backing the rToken universe and backtests), an OpenAI-compatible LLM

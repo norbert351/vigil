@@ -12,11 +12,11 @@ function fmtUsd(n) { return "$" + Number(n || 0).toLocaleString(undefined, { max
 function fmtTs(ts) { return new Date(Number(ts)).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
 
 // Collect the night's facts from the ledger (no LLM needed).
-export function nightFacts(db, { sinceTs = 0 } = {}) {
-  const decisions = listDecisions(db, 500).reverse().filter((d) => d.ts >= sinceTs);
+export async function nightFacts(db, { sinceTs = 0 } = {}) {
+  const decisions = (await listDecisions(db, 500)).reverse().filter((d) => d.ts >= sinceTs);
   const trades = decisions.flatMap((d) => (JSON.parse(d.orders_json || "[]") || []).filter((o) => o.action && o.action !== "HOLD"));
-  const curve = equityCurve(db, 2000).filter((r) => r.ts >= sinceTs && Number(r.nav_micro) > 0);
-  const ag = getAgentState(db);
+  const curve = (await equityCurve(db, 2000)).filter((r) => r.ts >= sinceTs && Number(r.nav_micro) > 0);
+  const ag = await getAgentState(db);
   const startNav = curve.length ? usd(curve[0].nav_micro) : (ag.nav_micro ? usd(ag.nav_micro) : 0);
   const endNav = curve.length ? usd(curve[curve.length - 1].nav_micro) : startNav;
   const baselineMove = 0; // requires price rehydration; reported when available
@@ -98,7 +98,7 @@ function LLM_MODE() { return process.env.VIGIL_LLM || "stub"; }
 // Full report (JSON facts + narration). Facts are always exact from the ledger.
 export async function buildReport(db, opts = {}) {
   const sinceTs = opts.sinceTs || (Date.now() - 24 * 3600_000);
-  const facts = nightFacts(db, { sinceTs });
+  const facts = await nightFacts(db, { sinceTs });
   const llm = llmFactory();
   const { narration, model } = await narrate(facts, llm);
   return { generatedAt: Date.now(), windowHours: 24, facts, narration, model };
