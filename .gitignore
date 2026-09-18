@@ -17,4 +17,14 @@ scripts/reset-sequences.mjs
 # env
 .env
 .env.*
-!.env.example
+!.env.example# demo recording intermediates (keep the committed mp4 + driver)
+demo/raw.mp4
+demo/cut.mp4
+demo/extended.mp4
+demo/final.mp4
+demo/n*.mp3
+demo/bed.wav
+demo/mix.wav
+demo/nar.wav
+demo/timeline.json
+demo/final_web.mp4
